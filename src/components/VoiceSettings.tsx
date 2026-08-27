@@ -28,16 +28,22 @@ import {
   CheckCircle2,
   AlertCircle,
   HelpCircle,
-  Smartphone,
-  Download,
-  Globe,
+  Activity,
+  Compass,
+  ChevronDown,
+  Orbit,
+  CircleDot,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
-import { LilaPersonaId, VoiceName, VoiceSettingsConfig, WakeWordOption } from '../types';
+import { LilaPersonaId, VoiceName, VoiceSettingsConfig, WakeWordOption, RingAnimationStyle, ThemeMode } from '../types';
 import {
   LILA_VOICE_OPTIONS,
   LILA_PITCH_CONFIG,
   LILA_PERSONAS,
   LILA_WAKE_WORDS,
+  LILA_RING_ANIMATIONS,
   getPitchDescription,
 } from '../lila';
 import {
@@ -53,7 +59,6 @@ interface VoiceSettingsProps {
   config: VoiceSettingsConfig;
   onChangeConfig: (newConfig: Partial<VoiceSettingsConfig>) => void;
   onPreviewGreeting?: (greetingText: string) => void;
-  theme?: 'light' | 'dark';
 }
 
 const PERSONA_ICONS: Record<LilaPersonaId, any> = {
@@ -65,23 +70,163 @@ const PERSONA_ICONS: Record<LilaPersonaId, any> = {
   girlfriend: Heart,
 };
 
+const RING_ICONS: Record<RingAnimationStyle, any> = {
+  golden_spirals: Sparkles,
+  cosmic_pulse: Radio,
+  quantum_orbit: Orbit,
+  soundwave_bars: Activity,
+  celestial_gyro: Compass,
+  supernova_flares: Flame,
+};
+
 export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
   isOpen,
   onClose,
   config,
   onChangeConfig,
   onPreviewGreeting,
-  theme = 'light',
 }) => {
-  const [activeTab, setActiveTab] = useState<'persona' | 'wake_word' | 'voice' | 'engine'>('persona');
+  const [activeTab, setActiveTab] = useState<'persona' | 'wake_word' | 'voice' | 'rings' | 'engine'>('persona');
   const [testWakeWordState, setTestWakeWordState] = useState<'idle' | 'testing' | 'success'>('idle');
   const [micStatus, setMicStatus] = useState<'granted' | 'prompt' | 'denied' | 'checking'>('checking');
   const [isTestingMic, setIsTestingMic] = useState(false);
   const [testMicVolume, setTestMicVolume] = useState(0);
   const [micGrantedToast, setMicGrantedToast] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const testMicStreamRef = useRef<MediaStream | null>(null);
   const testMicCtxRef = useRef<AudioContext | null>(null);
-  const isDark = theme === 'dark';
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Live Canvas Preview for Ring Animation Tab
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'rings') return;
+    const canvas = previewCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animId: number;
+    let angle = 0;
+    const currentStyle = config.ringAnimation || 'golden_spirals';
+
+    const renderPreview = () => {
+      angle += 0.03;
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      const cx = w / 2;
+      const cy = h / 2;
+      const baseR = 36;
+
+      // Soft center orb
+      ctx.beginPath();
+      ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
+      ctx.fillStyle = '#18181B';
+      ctx.fill();
+
+      // Style specific preview rendering
+      if (currentStyle === 'golden_spirals') {
+        const arms = [0, Math.PI];
+        arms.forEach((offset, idx) => {
+          ctx.beginPath();
+          for (let i = 0; i <= 60; i++) {
+            const t = i / 60;
+            const r = baseR + 2 + t * 30;
+            const a = offset + (idx === 0 ? 1 : -1) * (angle + t * Math.PI * 2);
+            const x = cx + Math.cos(a) * r;
+            const y = cy + Math.sin(a) * r;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = 'rgba(24, 24, 27, 0.45)';
+          ctx.lineWidth = 1.8;
+          ctx.stroke();
+        });
+      } else if (currentStyle === 'cosmic_pulse') {
+        for (let i = 0; i < 3; i++) {
+          const progress = ((angle * 0.2 + i / 3) % 1);
+          const r = baseR + 4 + progress * 32;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(24, 24, 27, ${(1 - progress) * 0.45})`;
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+        }
+      } else if (currentStyle === 'quantum_orbit') {
+        const tilts = [0.4, 0.6, 0.35];
+        tilts.forEach((tilt, idx) => {
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate((idx * Math.PI) / 3 + angle * 0.2 * (idx === 1 ? -1 : 1));
+          ctx.beginPath();
+          ctx.ellipse(0, 0, baseR + 14 + idx * 6, (baseR + 14 + idx * 6) * tilt, 0, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(24, 24, 27, 0.35)';
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+
+          // Particle
+          const pa = angle * 1.5 * (idx === 1 ? -1 : 1);
+          const px = Math.cos(pa) * (baseR + 14 + idx * 6);
+          const py = Math.sin(pa) * ((baseR + 14 + idx * 6) * tilt);
+          ctx.beginPath();
+          ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#18181B';
+          ctx.fill();
+          ctx.restore();
+        });
+      } else if (currentStyle === 'soundwave_bars') {
+        const bars = 28;
+        for (let i = 0; i < bars; i++) {
+          const a = (i / bars) * Math.PI * 2 + angle * 0.1;
+          const hVal = 4 + Math.sin(i * 0.8 + angle * 2) * 12 + 6;
+          const x1 = cx + Math.cos(a) * (baseR + 4);
+          const y1 = cy + Math.sin(a) * (baseR + 4);
+          const x2 = cx + Math.cos(a) * (baseR + 4 + hVal);
+          const y2 = cy + Math.sin(a) * (baseR + 4 + hVal);
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.strokeStyle = 'rgba(24, 24, 27, 0.55)';
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+        }
+      } else if (currentStyle === 'celestial_gyro') {
+        [0.7, 0.5, 0.3].forEach((tilt, idx) => {
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate((idx * Math.PI) / 3 + angle * (0.3 + idx * 0.1) * (idx % 2 === 0 ? 1 : -1));
+          ctx.beginPath();
+          ctx.ellipse(0, 0, baseR + 12 + idx * 8, (baseR + 12 + idx * 8) * tilt, 0, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(24, 24, 27, 0.4)';
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+          ctx.restore();
+        });
+      } else if (currentStyle === 'supernova_flares') {
+        ctx.beginPath();
+        const pts = 36;
+        for (let i = 0; i <= pts; i++) {
+          const t = i / pts;
+          const a = t * Math.PI * 2 + angle * 0.2;
+          const flareH = 6 + (Math.sin(i * 2 + angle * 3) > 0 ? 14 : 2);
+          const r = baseR + 4 + flareH;
+          const x = cx + Math.cos(a) * r;
+          const y = cy + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = 'rgba(24, 24, 27, 0.45)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      animId = requestAnimationFrame(renderPreview);
+    };
+
+    animId = requestAnimationFrame(renderPreview);
+    return () => cancelAnimationFrame(animId);
+  }, [isOpen, activeTab, config.ringAnimation]);
 
   useEffect(() => {
     if (isOpen) {
@@ -225,46 +370,38 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
           initial={{ opacity: 0, scale: 0.96, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 10 }}
-          className="w-full max-w-xl bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] text-[#1D1D1F]"
+          className="w-full max-w-xl bg-white dark:bg-[#121217] border border-gray-200 dark:border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] text-[#1D1D1F] dark:text-gray-100"
         >
           {/* Header */}
-          <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-white">
+          <div className="p-5 border-b border-gray-100 dark:border-white/10 flex items-center justify-between bg-white dark:bg-[#121217]">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white shadow-sm">
+              <div className="w-8 h-8 rounded-full bg-black dark:bg-white flex items-center justify-center text-white dark:text-black shadow-sm">
                 <Settings className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-[#1D1D1F]">Preferences & Persona Settings</h3>
-                <p className="text-xs text-gray-400 font-light">Lila AI · Wake Word · Persona · Audio</p>
+                <h3 className="text-sm font-semibold text-[#1D1D1F] dark:text-white">Preferences & Persona Settings</h3>
+                <p className="text-xs text-gray-400 dark:text-gray-400 font-light">Lila AI · Wake Word · Persona · Audio · Theme</p>
               </div>
             </div>
 
             <button
               id="lila-close-settings-modal-btn"
               onClick={onClose}
-              className="p-2 rounded-full text-gray-400 hover:text-black hover:bg-gray-100 transition-colors"
+              className="p-2 rounded-full text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
           {/* Navigation Tabs */}
-          <div
-            className={`flex border-b px-4 py-2 gap-1 overflow-x-auto custom-scrollbar transition-colors ${
-              isDark ? 'bg-[#14161C] border-[#22252D]' : 'bg-[#FAFAFA] border-gray-100'
-            }`}
-          >
+          <div className="flex border-b border-gray-100 dark:border-white/10 bg-[#FAFAFA] dark:bg-[#16161D] px-4 py-2 gap-1 overflow-x-auto custom-scrollbar">
             <button
               id="tab-persona"
               onClick={() => setActiveTab('persona')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 activeTab === 'persona'
-                  ? isDark
-                    ? 'bg-white text-black shadow-xs'
-                    : 'bg-black text-white shadow-xs'
-                  : isDark
-                  ? 'text-gray-400 hover:bg-white/10 hover:text-white'
-                  : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
               }`}
             >
               <HeartHandshake className="w-3.5 h-3.5" />
@@ -274,14 +411,10 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
             <button
               id="tab-wake-word"
               onClick={() => setActiveTab('wake_word')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 activeTab === 'wake_word'
-                  ? isDark
-                    ? 'bg-white text-black shadow-xs'
-                    : 'bg-black text-white shadow-xs'
-                  : isDark
-                  ? 'text-gray-400 hover:bg-white/10 hover:text-white'
-                  : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
               }`}
             >
               <Mic className="w-3.5 h-3.5" />
@@ -291,14 +424,10 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
             <button
               id="tab-voice"
               onClick={() => setActiveTab('voice')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 activeTab === 'voice'
-                  ? isDark
-                    ? 'bg-white text-black shadow-xs'
-                    : 'bg-black text-white shadow-xs'
-                  : isDark
-                  ? 'text-gray-400 hover:bg-white/10 hover:text-white'
-                  : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
               }`}
             >
               <Volume2 className="w-3.5 h-3.5" />
@@ -306,16 +435,25 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
             </button>
 
             <button
+              id="tab-rings"
+              onClick={() => setActiveTab('rings')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                activeTab === 'rings'
+                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Ring Animations (एनिमेशन)</span>
+            </button>
+
+            <button
               id="tab-engine"
               onClick={() => setActiveTab('engine')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 activeTab === 'engine'
-                  ? isDark
-                    ? 'bg-white text-black shadow-xs'
-                    : 'bg-black text-white shadow-xs'
-                  : isDark
-                  ? 'text-gray-400 hover:bg-white/10 hover:text-white'
-                  : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
               }`}
             >
               <Cpu className="w-3.5 h-3.5" />
@@ -324,15 +462,15 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar bg-[#FAFAFA]">
+          <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar bg-[#FAFAFA] dark:bg-[#16161D]">
             {/* Respect & Etiquette Guarantee Banner (Always visible at top of settings) */}
-            <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex items-start gap-3 text-xs text-emerald-950 shadow-xs">
-              <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+            <div className="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-700/50 flex items-start gap-3 text-xs text-emerald-950 dark:text-emerald-200 shadow-xs">
+              <ShieldCheck className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="space-y-0.5">
-                <span className="font-semibold block text-emerald-900">
+                <span className="font-semibold block text-emerald-900 dark:text-emerald-100">
                   Hinglish & Supreme 'Aap' Respect Guarantee
                 </span>
-                <p className="text-[11px] text-emerald-800 leading-relaxed font-light">
+                <p className="text-[11px] text-emerald-800 dark:text-emerald-300 leading-relaxed font-light">
                   Lila speaks in friendly, natural Hinglish (e.g. <em>"kya kar rahe he aap, sab ok hai na"</em>) and ALWAYS treats everyone with supreme dignity using <strong>"Aap"</strong>, <strong>"Aapka"</strong>, <strong>"bataiye"</strong>, and <strong>"kijiye"</strong>.
                 </p>
               </div>
@@ -342,11 +480,11 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
             {activeTab === 'persona' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <HeartHandshake className="w-3.5 h-3.5 text-gray-600" />
+                  <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+                    <HeartHandshake className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
                     <span>Choose Lila’s Persona (लीला का स्वरूप)</span>
                   </label>
-                  <span className="text-xs text-black font-semibold">
+                  <span className="text-xs text-black dark:text-white font-semibold">
                     {currentPersona.name}
                   </span>
                 </div>
@@ -374,15 +512,15 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                           }}
                           className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer select-none ${
                             isSelected
-                              ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
-                              : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
+                              ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-sm'
+                              : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 hover:border-gray-300 dark:hover:border-white/20'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2 mb-1.5">
                             <div className="flex items-center gap-2.5">
                               <div
                                 className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                                  isSelected ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'
+                                  isSelected ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'
                                 }`}
                               >
                                 <Icon className="w-3.5 h-3.5" />
@@ -393,26 +531,26 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                                   <span
                                     className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
                                       isSelected
-                                        ? 'bg-neutral-900 text-white border-black'
-                                        : 'bg-gray-100 text-gray-700 border-gray-200'
+                                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-black border-black dark:border-white'
+                                        : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10'
                                     }`}
                                   >
                                     {p.tag}
                                   </span>
                                 </div>
-                                <div className="text-[11px] text-gray-500 font-medium">{p.hindiName}</div>
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">{p.hindiName}</div>
                               </div>
                             </div>
-                            {isSelected && <Check className="w-4 h-4 text-black shrink-0 mt-1" />}
+                            {isSelected && <Check className="w-4 h-4 text-black dark:text-white shrink-0 mt-1" />}
                           </div>
 
-                          <p className="text-[11px] text-gray-600 leading-relaxed font-light pl-9.5">
+                          <p className="text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed font-light pl-9.5">
                             {p.hindiDescription}
                           </p>
 
                           {/* Sample Greeting Preview */}
-                          <div className="mt-2.5 pt-2 border-t border-gray-100 flex items-center justify-between text-[11px] pl-9.5">
-                            <span className="text-gray-500 italic truncate max-w-[340px]">
+                          <div className="mt-2.5 pt-2 border-t border-gray-100 dark:border-white/10 flex items-center justify-between text-[11px] pl-9.5">
+                            <span className="text-gray-500 dark:text-gray-400 italic truncate max-w-[340px]">
                               "{p.sampleGreeting}"
                             </span>
                             {onPreviewGreeting && (
@@ -423,10 +561,10 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                                   onChangeConfig({ persona: p.id });
                                   onPreviewGreeting(p.sampleGreeting);
                                 }}
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-black hover:text-neutral-700 px-2 py-0.5 rounded bg-gray-100 hover:bg-gray-200 transition-colors shrink-0 ml-2 cursor-pointer"
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-black dark:text-white hover:text-neutral-700 dark:hover:text-gray-300 px-2 py-0.5 rounded bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 transition-colors shrink-0 ml-2 cursor-pointer"
                                 title="Listen to sample greeting"
                               >
-                                <Play className="w-2.5 h-2.5 fill-black" />
+                                <Play className="w-2.5 h-2.5 fill-black dark:fill-white" />
                                 <span>Listen</span>
                               </button>
                             )}
@@ -436,33 +574,165 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                     })}
                 </div>
 
-                {/* If girlfriend persona is currently active, show a discreet status to switch back */}
-                {config.persona === 'girlfriend' && (
-                  <div
-                    className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs shadow-xs ${
-                      isDark
-                        ? 'bg-rose-950/40 border-rose-800/80 text-rose-200'
-                        : 'bg-rose-50 border-rose-200 text-rose-950'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Heart className="w-4 h-4 fill-rose-500 text-rose-500 shrink-0" />
-                      <div>
-                        <span className="font-semibold block">Girlfriend Mode Active</span>
-                        <span className="text-[11px] opacity-80 font-light">
-                          Romantic, ultra-sweet Hinglish with minimal words.
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onChangeConfig({ persona: 'friend' })}
-                      className="px-3 py-1.5 rounded-full text-xs font-semibold bg-black text-white hover:bg-neutral-800 shadow-xs transition-colors shrink-0 cursor-pointer"
-                    >
-                      Switch to Friend
-                    </button>
+                {/* SECRET PERSONA: GIRLFRIEND (AT LAST OF PERSONA TAB) */}
+                <div className="pt-3 border-t border-gray-200/70 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-rose-600 uppercase tracking-widest flex items-center gap-1.5">
+                      <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
+                      <span>Secret Persona (सीक्रेट स्वरूप)</span>
+                    </label>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/60">
+                      Bonus Mode
+                    </span>
                   </div>
-                )}
+
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-50/80 via-pink-50/40 to-white border border-rose-200/80 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-rose-100 border border-rose-200/80 flex items-center justify-center text-rose-600 shrink-0">
+                          <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-xs text-rose-950">
+                              Girlfriend Persona (गर्लफ्रेंड)
+                            </span>
+                            <span className="text-[9px] px-2 py-0.2 rounded-full bg-rose-100 text-rose-800 border border-rose-200 font-semibold">
+                              Special
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-rose-800/80 font-light">
+                            Romantic, sweet & caring Hinglish voice companion with deep affection.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Enable / Disable Secret Switch */}
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          id="secret-girlfriend-toggle"
+                          type="checkbox"
+                          checked={!!config.secretGirlfriendEnabled}
+                          onChange={(e) => {
+                            const isEnabled = e.target.checked;
+                            if (!isEnabled && config.persona === 'girlfriend') {
+                              onChangeConfig({
+                                secretGirlfriendEnabled: false,
+                                persona: 'friend',
+                              });
+                            } else {
+                              onChangeConfig({ secretGirlfriendEnabled: isEnabled });
+                            }
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5.5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-rose-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Interactive Girlfriend Option if Enabled */}
+                    {config.secretGirlfriendEnabled ? (
+                      <div className="pt-2 border-t border-rose-200/60">
+                        {(() => {
+                          const p = LILA_PERSONAS.girlfriend;
+                          const isSelected = config.persona === 'girlfriend';
+
+                          return (
+                            <div
+                              id="persona-option-girlfriend"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => onChangeConfig({ persona: 'girlfriend' })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  onChangeConfig({ persona: 'girlfriend' });
+                                }
+                              }}
+                              className={`w-full p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer select-none ${
+                                isSelected
+                                  ? 'bg-white border-rose-500 text-rose-950 ring-2 ring-rose-300 shadow-sm'
+                                  : 'bg-white/80 border-rose-200 text-gray-700 hover:bg-white hover:border-rose-300'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2 mb-1.5">
+                                <div className="flex items-center gap-2.5">
+                                  <div
+                                    className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                                      isSelected
+                                        ? 'bg-rose-500 text-white'
+                                        : 'bg-rose-100 text-rose-600'
+                                    }`}
+                                  >
+                                    <Heart className="w-3.5 h-3.5 fill-current" />
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-xs flex items-center gap-2">
+                                      <span>{p.name}</span>
+                                      <span
+                                        className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
+                                          isSelected
+                                            ? 'bg-rose-600 text-white border-rose-600'
+                                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                                        }`}
+                                      >
+                                        {p.tag}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-rose-800 font-medium">
+                                      {p.hindiName}
+                                    </div>
+                                  </div>
+                                </div>
+                                {isSelected ? (
+                                  <span className="flex items-center gap-1 text-[11px] text-rose-700 font-semibold">
+                                    <Check className="w-4 h-4 text-rose-600" />
+                                    <span>Active</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 font-medium">
+                                    Click to Activate
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="text-[11px] text-rose-900/80 leading-relaxed font-light pl-9.5">
+                                {p.hindiDescription}
+                              </p>
+
+                              {/* Sample Greeting Preview */}
+                              <div className="mt-2.5 pt-2 border-t border-rose-100 flex items-center justify-between text-[11px] pl-9.5">
+                                <span className="text-rose-700/80 italic truncate max-w-[320px]">
+                                  "{p.sampleGreeting}"
+                                </span>
+                                {onPreviewGreeting && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onChangeConfig({ persona: 'girlfriend' });
+                                      onPreviewGreeting(p.sampleGreeting);
+                                    }}
+                                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-800 hover:text-rose-950 px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 transition-colors shrink-0 ml-2 cursor-pointer"
+                                    title="Listen to sample greeting"
+                                  >
+                                    <Play className="w-2.5 h-2.5 fill-rose-700 text-rose-700" />
+                                    <span>Listen</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-[11px] text-rose-700/70 pt-1 font-light italic">
+                        <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>Secret Girlfriend persona is disabled. Flip the switch above to enable.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -859,12 +1129,302 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
               </div>
             )}
 
+            {/* TAB: RING ANIMATIONS & VISUAL STYLES */}
+            {activeTab === 'rings' && (
+              <div className="space-y-5">
+                {/* Header info */}
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-gray-600" />
+                    <span>Select Ring Animation (रिंग एनिमेशन)</span>
+                  </label>
+                  <span className="text-xs text-black font-semibold">
+                    {LILA_RING_ANIMATIONS.find((r) => r.id === (config.ringAnimation || 'golden_spirals'))?.name}
+                  </span>
+                </div>
+
+                {/* Interactive Drop-down Chooser */}
+                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold text-[#1D1D1F] block">
+                        Animation Chooser Drop-down
+                      </span>
+                      <span className="text-[11px] text-gray-500 font-light block">
+                        Quickly switch between 6 distinct high-fps visualizer animation styles
+                      </span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-black text-white font-mono font-semibold">
+                      6 Styles
+                    </span>
+                  </div>
+
+                  {/* Dropdown Select element */}
+                  <div className="relative">
+                    <button
+                      id="lila-ring-animation-dropdown-btn"
+                      type="button"
+                      onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                      className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-200 hover:border-gray-400 text-left transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {(() => {
+                          const activeOpt = LILA_RING_ANIMATIONS.find(
+                            (r) => r.id === (config.ringAnimation || 'golden_spirals')
+                          );
+                          const IconComp = activeOpt ? RING_ICONS[activeOpt.id] || Sparkles : Sparkles;
+                          return (
+                            <>
+                              <div className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-xs">
+                                <IconComp className="w-3.5 h-3.5" />
+                              </div>
+                              <div>
+                                <div className="font-semibold text-xs text-[#1D1D1F] flex items-center gap-2">
+                                  <span>{activeOpt?.name}</span>
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-gray-200 text-gray-800 font-semibold uppercase">
+                                    {activeOpt?.tag}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-gray-500 font-medium">
+                                  {activeOpt?.hindiName}
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${
+                          isDropdownOpen ? 'rotate-180 text-black' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {/* Dropdown Popup Menu */}
+                    <AnimatePresence>
+                      {isDropdownOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -6 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute left-0 right-0 top-full mt-1.5 z-20 bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden divide-y divide-gray-100 max-h-72 overflow-y-auto custom-scrollbar"
+                        >
+                          {LILA_RING_ANIMATIONS.map((opt) => {
+                            const isSelected = (config.ringAnimation || 'golden_spirals') === opt.id;
+                            const IconComp = RING_ICONS[opt.id] || Sparkles;
+                            return (
+                              <button
+                                key={opt.id}
+                                id={`dropdown-option-${opt.id}`}
+                                type="button"
+                                onClick={() => {
+                                  onChangeConfig({ ringAnimation: opt.id });
+                                  setIsDropdownOpen(false);
+                                }}
+                                className={`w-full p-3 flex items-center justify-between text-left transition-colors cursor-pointer ${
+                                  isSelected ? 'bg-gray-100/90 text-black font-semibold' : 'hover:bg-gray-50 text-gray-700'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div
+                                    className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                                      isSelected ? 'bg-black text-white' : 'bg-gray-100 text-gray-600'
+                                    }`}
+                                  >
+                                    <IconComp className="w-3 h-3" />
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-medium flex items-center gap-1.5">
+                                      <span>{opt.name}</span>
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-gray-100 text-gray-600 border border-gray-200 font-normal">
+                                        {opt.tag}
+                                      </span>
+                                    </div>
+                                    <div className="text-[10px] text-gray-400 font-light">{opt.hindiName}</div>
+                                  </div>
+                                </div>
+                                {isSelected && <Check className="w-4 h-4 text-black shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+
+                {/* Live Real-Time Canvas Preview Card */}
+                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm flex flex-col sm:flex-row items-center gap-4">
+                  <div className="relative w-32 h-32 shrink-0 flex items-center justify-center bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden shadow-inner">
+                    <canvas
+                      ref={previewCanvasRef}
+                      width={128}
+                      height={128}
+                      className="w-32 h-32 pointer-events-none"
+                    />
+                    <div className="absolute inset-x-2 bottom-1.5 text-center">
+                      <span className="text-[9px] text-gray-400 font-mono tracking-wider uppercase">Live Preview</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 text-center sm:text-left flex-1">
+                    <div className="flex items-center justify-center sm:justify-start gap-2">
+                      <span className="text-xs font-semibold text-black">
+                        {LILA_RING_ANIMATIONS.find((r) => r.id === (config.ringAnimation || 'golden_spirals'))?.name}
+                      </span>
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-black text-white font-semibold">
+                        Active Style
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-600 leading-relaxed font-light">
+                      {LILA_RING_ANIMATIONS.find((r) => r.id === (config.ringAnimation || 'golden_spirals'))?.description}
+                    </p>
+                    <p className="text-[11px] text-gray-500 italic font-light">
+                      {LILA_RING_ANIMATIONS.find((r) => r.id === (config.ringAnimation || 'golden_spirals'))?.hindiDescription}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 6 Animation Interactive Grid Selector Cards */}
+                <div className="space-y-2.5">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">
+                    All 6 Available Animations
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {LILA_RING_ANIMATIONS.map((opt) => {
+                      const isSelected = (config.ringAnimation || 'golden_spirals') === opt.id;
+                      const IconComp = RING_ICONS[opt.id] || Sparkles;
+
+                      return (
+                        <div
+                          key={opt.id}
+                          id={`ring-animation-card-${opt.id}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => onChangeConfig({ ringAnimation: opt.id })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              onChangeConfig({ ringAnimation: opt.id });
+                            }
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer select-none ${
+                            isSelected
+                              ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                              : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-2.5">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                                  isSelected ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'
+                                }`}
+                              >
+                                <IconComp className="w-3.5 h-3.5" />
+                              </div>
+                              <div>
+                                <div className="font-semibold text-xs flex items-center gap-2">
+                                  <span>{opt.name}</span>
+                                  <span
+                                    className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
+                                      isSelected
+                                        ? 'bg-black text-white border-black'
+                                        : 'bg-gray-100 text-gray-700 border-gray-200'
+                                    }`}
+                                  >
+                                    {opt.tag}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-gray-500 font-medium">{opt.hindiName}</div>
+                              </div>
+                            </div>
+                            {isSelected && <Check className="w-4 h-4 text-black shrink-0 mt-1" />}
+                          </div>
+
+                          <p className="text-[11px] text-gray-600 leading-relaxed font-light pl-9.5">
+                            {opt.description}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* TAB 4: ENGINE & PROTOCOL SETTINGS */}
             {activeTab === 'engine' && (
               <div className="space-y-5">
+                {/* Theme Mode Selector */}
                 <div className="space-y-3">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5 text-gray-600" />
+                    <Sun className="w-3.5 h-3.5 text-gray-600 dark:text-gray-300" />
+                    <span>Theme & Appearance (थीम)</span>
+                  </label>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      id="theme-btn-light"
+                      type="button"
+                      onClick={() => onChangeConfig({ theme: 'light' })}
+                      className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
+                        (config.theme || 'system') === 'light'
+                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-xs'
+                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        (config.theme || 'system') === 'light' ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400'
+                      }`}>
+                        <Sun className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-semibold">Light</span>
+                    </button>
+
+                    <button
+                      id="theme-btn-dark"
+                      type="button"
+                      onClick={() => onChangeConfig({ theme: 'dark' })}
+                      className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
+                        config.theme === 'dark'
+                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-xs'
+                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        config.theme === 'dark' ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400'
+                      }`}>
+                        <Moon className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-semibold">Dark</span>
+                    </button>
+
+                    <button
+                      id="theme-btn-system"
+                      type="button"
+                      onClick={() => onChangeConfig({ theme: 'system' })}
+                      className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
+                        config.theme === 'system'
+                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-xs'
+                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        config.theme === 'system' ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400'
+                      }`}>
+                        <Monitor className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-semibold">System</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-gray-200/80 dark:border-white/10">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
                     <span>Connection Protocol</span>
                   </label>
 
@@ -873,12 +1433,12 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                       onClick={() => onChangeConfig({ connectionMode: 'live_websocket' })}
                       className={`p-3.5 rounded-2xl border text-left transition-all ${
                         config.connectionMode === 'live_websocket'
-                          ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-sm'
+                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'
                       }`}
                     >
-                      <div className="font-semibold text-xs text-black mb-0.5">Gemini Live Stream</div>
-                      <div className="text-[11px] text-gray-500 font-light">
+                      <div className="font-semibold text-xs text-black dark:text-white mb-0.5">Gemini Live Stream</div>
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400 font-light">
                         Real-time bidirectional 24kHz PCM16 stream with live interruptions
                       </div>
                     </button>
@@ -887,33 +1447,33 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                       onClick={() => onChangeConfig({ connectionMode: 'turn_based' })}
                       className={`p-3.5 rounded-2xl border text-left transition-all ${
                         config.connectionMode === 'turn_based'
-                          ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-sm'
+                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'
                       }`}
                     >
-                      <div className="font-semibold text-xs text-black mb-0.5">Smart Voice Turn</div>
-                      <div className="text-[11px] text-gray-500 font-light">
+                      <div className="font-semibold text-xs text-black dark:text-white mb-0.5">Smart Voice Turn</div>
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400 font-light">
                         Gemini 3.7 Flash + Grounding + 3.1 Flash TTS Synthesis
                       </div>
                     </button>
                   </div>
                 </div>
 
-                <div className="space-y-3 pt-4 border-t border-gray-200/80">
+                <div className="space-y-3 pt-4 border-t border-gray-200/80 dark:border-white/10">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-gray-600" />
+                    <Sparkles className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
                     <span>Interaction Preferences</span>
                   </label>
 
                   <div className="space-y-2">
                     {/* Always Allow Mic */}
-                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-gray-200 shadow-sm">
+                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#1A1A22] border border-gray-200 dark:border-white/10 shadow-sm">
                       <div className="space-y-0.5 pr-2">
-                        <span className="font-semibold text-xs text-[#1D1D1F] flex items-center gap-1.5">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="font-semibold text-xs text-[#1D1D1F] dark:text-white flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                           <span>Always Allow Microphone (हमेशा माइक चालू रखें)</span>
                         </span>
-                        <span className="text-[11px] text-gray-500 font-light block">
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-light block">
                           Maintain persistent microphone pre-authorization for zero-delay speech responses
                         </span>
                       </div>
@@ -927,17 +1487,17 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                             handleAuthorizeAlwaysMic();
                           }
                         }}
-                        className="w-4 h-4 accent-black rounded cursor-pointer shrink-0"
+                        className="w-4 h-4 accent-black dark:accent-white rounded cursor-pointer shrink-0"
                       />
                     </div>
 
                     {/* Continuous Hands-Free */}
-                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-gray-200 shadow-sm">
+                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#1A1A22] border border-gray-200 dark:border-white/10 shadow-sm">
                       <div className="space-y-0.5">
-                        <span className="font-medium text-xs text-[#1D1D1F] block">
+                        <span className="font-medium text-xs text-[#1D1D1F] dark:text-white block">
                           Hands-Free Continuous Conversation
                         </span>
-                        <span className="text-[11px] text-gray-500 font-light block">
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-light block">
                           Automatically resume microphone listening after Lila finishes speaking
                         </span>
                       </div>
@@ -945,17 +1505,17 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                         type="checkbox"
                         checked={config.continuousMode}
                         onChange={(e) => onChangeConfig({ continuousMode: e.target.checked })}
-                        className="w-4 h-4 accent-black rounded cursor-pointer"
+                        className="w-4 h-4 accent-black dark:accent-white rounded cursor-pointer"
                       />
                     </div>
 
                     {/* Subtitles Overlay */}
-                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-gray-200 shadow-sm">
+                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#1A1A22] border border-gray-200 dark:border-white/10 shadow-sm">
                       <div className="space-y-0.5">
-                        <span className="font-medium text-xs text-[#1D1D1F] block">
+                        <span className="font-medium text-xs text-[#1D1D1F] dark:text-white block">
                           Live Subtitle Captions
                         </span>
-                        <span className="text-[11px] text-gray-500 font-light block">
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-light block">
                           Display dynamic text floating badge during voice streaming
                         </span>
                       </div>
@@ -963,29 +1523,23 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                         type="checkbox"
                         checked={config.showSubtitles}
                         onChange={(e) => onChangeConfig({ showSubtitles: e.target.checked })}
-                        className="w-4 h-4 accent-black rounded cursor-pointer"
+                        className="w-4 h-4 accent-black dark:accent-white rounded cursor-pointer"
                       />
                     </div>
 
                     {/* Sound Effects */}
-                    <div
-                      className={`flex items-center justify-between p-3.5 rounded-2xl border shadow-xs ${
-                        isDark ? 'bg-[#181A20] border-[#2B2F3A]' : 'bg-white border-gray-200'
-                      }`}
-                    >
+                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#1A1A22] border border-gray-200 dark:border-white/10 shadow-sm">
                       <div className="space-y-0.5">
-                        <span className={`font-medium text-xs block ${isDark ? 'text-white' : 'text-[#1D1D1F]'}`}>
-                          UI Sound Cues
-                        </span>
-                        <span className={`text-[11px] font-light block ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                          Play subtle audio chimes on session connect, tools, and wake word
+                        <span className="font-medium text-xs text-[#1D1D1F] dark:text-white block">UI Sound Cues</span>
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-light block">
+                          Play subtle audio chimes on session connect, tools, and disconnect
                         </span>
                       </div>
                       <input
                         type="checkbox"
                         checked={config.soundEffects}
                         onChange={(e) => onChangeConfig({ soundEffects: e.target.checked })}
-                        className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+                        className="w-4 h-4 accent-black dark:accent-white rounded cursor-pointer"
                       />
                     </div>
                   </div>
@@ -995,19 +1549,11 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
           </div>
 
           {/* Footer */}
-          <div
-            className={`p-4 border-t flex justify-end transition-colors ${
-              isDark ? 'bg-[#14161C] border-[#22252D]' : 'bg-white border-gray-100'
-            }`}
-          >
+          <div className="p-4 border-t border-gray-100 dark:border-white/10 flex justify-end bg-white dark:bg-[#121217]">
             <button
               id="lila-done-settings-btn"
               onClick={onClose}
-              className={`px-6 py-2 rounded-full text-xs font-semibold shadow-sm transition-all cursor-pointer ${
-                isDark
-                  ? 'bg-white text-black hover:bg-gray-200'
-                  : 'bg-black text-white hover:bg-neutral-800'
-              }`}
+              className="px-6 py-2 rounded-full bg-black dark:bg-white text-white dark:text-black text-xs font-semibold hover:bg-neutral-800 dark:hover:bg-gray-200 shadow-sm transition-all cursor-pointer"
             >
               Done
             </button>

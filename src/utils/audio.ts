@@ -498,65 +498,48 @@ export class MicRecorder {
 
 /**
  * Web Audio Synth for UI sound cues (Chimes, pops, tool alerts, wake up)
+ * Debounced to prevent continuous sound triggering on rapid mic status changes
  */
+// Mute mic on/off sounds completely to prevent repetitive audio annoyance
+let lastSoundPlayTimes: Record<string, number> = {};
+
 export function playSoundCue(type: 'connect' | 'disconnect' | 'tool' | 'speak' | 'pop' | 'wake') {
   try {
+    // Mic connect and disconnect sounds are silenced as per user request
+    if (type === 'connect' || type === 'disconnect') {
+      return;
+    }
+
+    const nowMs = Date.now();
+    const lastPlayed = lastSoundPlayTimes[type] || 0;
+    // Throttle duplicate audio chimes within 2000ms
+    if (nowMs - lastPlayed < 2000) {
+      return;
+    }
+    lastSoundPlayTimes[type] = nowMs;
+
     const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
     const ctx = new AudioCtxClass();
     const now = ctx.currentTime;
 
     if (type === 'wake') {
-      // Sparkling rising two-tone wake chime (F5 -> A5 -> C6)
+      // Gentle subtle two-tone chime
       const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
       const gain = ctx.createGain();
 
       osc1.type = 'sine';
       osc1.frequency.setValueAtTime(698.46, now); // F5
-      osc1.frequency.exponentialRampToValueAtTime(880.0, now + 0.08); // A5
-      osc1.frequency.exponentialRampToValueAtTime(1046.5, now + 0.18); // C6
-
-      osc2.type = 'triangle';
-      osc2.frequency.setValueAtTime(349.23, now);
-      osc2.frequency.exponentialRampToValueAtTime(523.25, now + 0.18);
+      osc1.frequency.exponentialRampToValueAtTime(880.0, now + 0.12); // A5
 
       gain.gain.setValueAtTime(0.001, now);
-      gain.gain.linearRampToValueAtTime(0.09, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      gain.gain.linearRampToValueAtTime(0.04, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
 
       osc1.connect(gain);
-      osc2.connect(gain);
       gain.connect(ctx.destination);
 
       osc1.start(now);
-      osc2.start(now);
-      osc1.stop(now + 0.32);
-      osc2.stop(now + 0.32);
-    } else if (type === 'connect') {
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(523.25, now); // C5
-      osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.12); // E5
-      osc1.frequency.exponentialRampToValueAtTime(783.99, now + 0.25); // G5
-
-      osc2.type = 'triangle';
-      osc2.frequency.setValueAtTime(261.63, now);
-      osc2.frequency.exponentialRampToValueAtTime(392.0, now + 0.25);
-
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc1.start(now);
-      osc2.start(now);
-      osc1.stop(now + 0.36);
-      osc2.stop(now + 0.36);
+      osc1.stop(now + 0.24);
     } else if (type === 'tool') {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -565,30 +548,14 @@ export function playSoundCue(type: 'connect' | 'disconnect' | 'tool' | 'speak' |
       osc.frequency.setValueAtTime(880, now);
       osc.frequency.exponentialRampToValueAtTime(1174.66, now + 0.08);
 
-      gain.gain.setValueAtTime(0.06, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      gain.gain.setValueAtTime(0.04, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(now);
-      osc.stop(now + 0.21);
-    } else if (type === 'disconnect') {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, now); // D5
-      osc.frequency.exponentialRampToValueAtTime(392.0, now + 0.18); // G4
-
-      gain.gain.setValueAtTime(0.06, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.26);
+      osc.stop(now + 0.2);
     }
   } catch (e) {
     // Sound playback optional

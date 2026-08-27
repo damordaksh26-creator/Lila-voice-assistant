@@ -20,6 +20,7 @@ import { VoiceOrb } from './components/VoiceOrb';
 import { ToolHUD } from './components/ToolHUD';
 import { TranscriptView } from './components/TranscriptView';
 import { VoiceSettingsModal } from './components/VoiceSettings';
+import { triggerHaptic } from './utils/android';
 import {
   VoiceState,
   VoiceSettingsConfig,
@@ -54,30 +55,33 @@ const PERSONA_QUICK_ICONS: Record<LilaPersonaId, any> = {
 
 const DEFAULT_SETTINGS: VoiceSettingsConfig = {
   voice: LILA_IDENTITY.defaultVoice,
-  pitch: 1.10, // Default pitch 1.1x (Sweet Young Girl)
+  pitch: LILA_ACOUSTIC_PRESETS.speechSynthesisPitch,
   persona: LILA_IDENTITY.defaultPersona,
-  wakeWordEnabled: true,
+  wakeWordEnabled: false,
   wakeWord: LILA_IDENTITY.defaultWakeWord,
-  wakeWordChime: true,
-  alwaysAllowMic: true, // Permanent Mic Access enabled by default
+  wakeWordChime: false,
+  alwaysAllowMic: true,
   continuousMode: true,
-  soundEffects: true,
+  soundEffects: false,
   showSubtitles: true,
   connectionMode: 'live_websocket',
-  secretGirlfriendUnlocked: false,
+  secretGirlfriendEnabled: false,
+  ringAnimation: 'golden_spirals',
+  theme: 'system',
 };
 
 const loadInitialSettings = (): VoiceSettingsConfig => {
   try {
-    const saved = localStorage.getItem('lila_settings_v2');
+    const saved = localStorage.getItem('lila_settings_v3');
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Migrate old pitch 1.0 or 1.06 to 1.10 default if not customized
-      const pitch =
-        parsed.pitch === undefined || parsed.pitch === 1.0 || parsed.pitch === 1.06
-          ? 1.10
-          : parsed.pitch;
-      return { ...DEFAULT_SETTINGS, ...parsed, pitch, alwaysAllowMic: true };
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        soundEffects: false,
+        wakeWordChime: false,
+        ringAnimation: parsed.ringAnimation || 'golden_spirals',
+      };
     }
   } catch (e) {
     // fallback
@@ -93,42 +97,48 @@ export default function App() {
   const [micLevel, setMicLevel] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Settings & Theme
+  // Settings
   const [settings, setSettings] = useState<VoiceSettingsConfig>(loadInitialSettings);
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    try {
-      const saved = localStorage.getItem('lila_theme');
-      return (saved === 'dark' || saved === 'light') ? saved : 'light';
-    } catch {
-      return 'light';
-    }
-  });
 
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next: ThemeMode = prev === 'light' ? 'dark' : 'light';
-      try {
-        localStorage.setItem('lila_theme', next);
-      } catch (e) {
-        // ignore
-      }
-      return next;
-    });
+  // System Dark Mode preference listener & active theme derivation
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)').matches : false
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
   }, []);
 
-  // Synchronize dark class to html document
+  const isDark = (settings.theme === 'dark') || (settings.theme !== 'light' && systemPrefersDark);
+
   useEffect(() => {
-    if (theme === 'dark') {
+    if (isDark) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-  }, [theme]);
+  }, [isDark]);
+
+  const handleToggleTheme = useCallback(() => {
+    setSettings((prev) => {
+      const nextTheme: ThemeMode = isDark ? 'light' : 'dark';
+      const updated = { ...prev, theme: nextTheme };
+      try {
+        localStorage.setItem('lila_settings_v3', JSON.stringify(updated));
+      } catch (e) {
+        // ignore
+      }
+      return updated;
+    });
+  }, [isDark]);
 
   // Tools & Transcripts
   const [activeTools, setActiveTools] = useState<ToolCallEvent[]>([]);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
-  const [currentlyPlayingId, setCurrentlyPlayingId] = useState<string | null>(null);
   const [micPermissionDenied, setMicPermissionDenied] = useState(false);
   const [micPermissionStatus, setMicPermissionStatus] = useState<
     'granted' | 'prompt' | 'denied' | 'checking'
@@ -141,9 +151,6 @@ export default function App() {
   // Wake Word & Persona Visual Feedback
   const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
   const [personaToast, setPersonaToast] = useState<string | null>(null);
-  const [secretGirlfriendUnlocked, setSecretGirlfriendUnlocked] = useState(() => {
-    return settings.persona === 'girlfriend';
-  });
 
   // UI Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -159,30 +166,13 @@ export default function App() {
   const voiceStateRef = useRef<VoiceState>('disconnected');
   const settingsRef = useRef<VoiceSettingsConfig>(settings);
   const isMutedRef = useRef(isMuted);
-  const startSpeechRecognitionRef = useRef<() => void>(() => {});
-  const handleTurnBasedMessageRef = useRef<(text: string) => void>(() => {});
-  const speakWithBrowserSpeechRef = useRef<(text: string, onEnd?: () => void) => void>(() => {});
 
   // Wake Word Standby Recognizer Ref
   const wakeWordRecognitionRef = useRef<any>(null);
 
-  // Keep refs synchronized and enforce absolute safety against stuck states
+  // Keep refs synchronized
   useEffect(() => {
     voiceStateRef.current = voiceState;
-    if (voiceState === 'thinking') {
-      // 2.5s absolute watchdog: thinking state can never hang permanently
-      const safetyTimer = setTimeout(() => {
-        if (voiceStateRef.current === 'thinking') {
-          console.warn('Thinking safety recovery: restoring conversation listening mode');
-          setVoiceState('listening');
-          micRecorderRef.current?.resumeStreaming();
-          if (settingsRef.current.connectionMode === 'turn_based') {
-            startSpeechRecognitionRef.current();
-          }
-        }
-      }, 2500);
-      return () => clearTimeout(safetyTimer);
-    }
   }, [voiceState]);
 
   useEffect(() => {
@@ -197,14 +187,17 @@ export default function App() {
   useEffect(() => {
     const player = new AudioQueuePlayer(24000);
     player.setOnQueueEnd(() => {
-      setCurrentlyPlayingId(null);
-      if (voiceStateRef.current === 'speaking' || voiceStateRef.current === 'thinking') {
-        setVoiceState('listening');
-        if (micRecorderRef.current) {
-          micRecorderRef.current.resumeStreaming();
-        }
-        if (settingsRef.current.connectionMode === 'turn_based') {
-          startSpeechRecognitionRef.current();
+      if (voiceStateRef.current === 'speaking') {
+        if (settingsRef.current.continuousMode && wsRef.current?.readyState === WebSocket.OPEN) {
+          setVoiceState('listening');
+        } else if (
+          settingsRef.current.continuousMode &&
+          settingsRef.current.connectionMode === 'turn_based'
+        ) {
+          setVoiceState('listening');
+          startSpeechRecognition();
+        } else {
+          setVoiceState('listening');
         }
       }
     });
@@ -262,10 +255,9 @@ export default function App() {
       text: string,
       toolCalls?: ToolCallEvent[],
       sources?: any[]
-    ): string => {
-      const id = Math.random().toString(36).substring(2, 9);
+    ) => {
       const newMsg: TranscriptMessage = {
-        id,
+        id: Math.random().toString(36).substring(2, 9),
         role,
         text,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -273,14 +265,12 @@ export default function App() {
         sources,
       };
       setMessages((prev) => [...prev, newMsg]);
-      return id;
     },
     []
   );
 
-  // Stop / Interrupt Lila's speech or thinking
+  // Stop / Interrupt Lila's speech
   const handleInterrupt = useCallback(() => {
-    setCurrentlyPlayingId(null);
     if (audioQueueRef.current) {
       audioQueueRef.current.stop();
     }
@@ -291,12 +281,6 @@ export default function App() {
       wsRef.current.send(JSON.stringify({ type: 'interrupt' }));
     }
     setVoiceState('listening');
-    if (micRecorderRef.current) {
-      micRecorderRef.current.resumeStreaming();
-    }
-    if (settingsRef.current.connectionMode === 'turn_based') {
-      startSpeechRecognitionRef.current();
-    }
   }, []);
 
   // Web Speech Recognition for Turn-Based Conversation
@@ -328,16 +312,21 @@ export default function App() {
     };
 
     recognition.onresult = (event: any) => {
-      let accumulated = '';
-      for (let i = 0; i < event.results.length; ++i) {
-        accumulated += ' ' + event.results[i][0].transcript;
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          final += event.results[i][0].transcript;
+        } else {
+          interim += event.results[i][0].transcript;
+        }
       }
-      const currentText = accumulated.trim();
+      const currentText = (final || interim).trim();
       if (currentText) {
         latestTranscriptRef.current = currentText;
         setLiveSubtitle({ role: 'user', text: currentText });
 
-        // Smart Silence VAD: automatically submit after 950ms of user silence
+        // Smart Silence VAD: automatically submit after 450ms of user silence
         if (speechSilenceTimerRef.current) {
           clearTimeout(speechSilenceTimerRef.current);
         }
@@ -350,9 +339,9 @@ export default function App() {
             } catch (e) {
               // ignore
             }
-            handleTurnBasedMessageRef.current(captured);
+            handleTurnBasedMessage(captured);
           }
-        }, 950);
+        }, 450);
       }
     };
 
@@ -372,11 +361,15 @@ export default function App() {
         settingsRef.current.connectionMode === 'turn_based' &&
         !latestTranscriptRef.current
       ) {
-        try {
-          recognition.start();
-        } catch (e) {
-          // ignore
-        }
+        setTimeout(() => {
+          if (voiceStateRef.current === 'listening' && settingsRef.current.connectionMode === 'turn_based') {
+            try {
+              recognition.start();
+            } catch (e) {
+              // ignore
+            }
+          }
+        }, 1200);
       }
     };
 
@@ -388,13 +381,9 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    startSpeechRecognitionRef.current = startSpeechRecognition;
-  }, [startSpeechRecognition]);
-
   // Helper for immediate browser synthesis fallback (strictly respectful in Hinglish)
   const speakWithBrowserSpeech = useCallback(
-    (text: string, onEndCallback?: () => void, messageId?: string) => {
+    (text: string, onEndCallback?: () => void) => {
       if (!('speechSynthesis' in window)) {
         if (onEndCallback) onEndCallback();
         return;
@@ -437,47 +426,23 @@ export default function App() {
         }
 
         setVoiceState('speaking');
-        if (messageId) {
-          setCurrentlyPlayingId(messageId);
-        }
         utterance.onend = () => {
-          setCurrentlyPlayingId(null);
-          setVoiceState('listening');
-          micRecorderRef.current?.resumeStreaming();
           if (onEndCallback) {
             onEndCallback();
-          }
-          if (settingsRef.current.connectionMode === 'turn_based') {
-            startSpeechRecognitionRef.current();
-          }
-        };
-        utterance.onerror = () => {
-          setCurrentlyPlayingId(null);
-          setVoiceState('listening');
-          micRecorderRef.current?.resumeStreaming();
-          if (onEndCallback) {
-            onEndCallback();
-          }
-          if (settingsRef.current.connectionMode === 'turn_based') {
-            startSpeechRecognitionRef.current();
+          } else if (settingsRef.current.continuousMode) {
+            setVoiceState('listening');
+            startSpeechRecognition();
+          } else {
+            setVoiceState('listening');
           }
         };
         window.speechSynthesis.speak(utterance);
       } catch (e) {
-        setCurrentlyPlayingId(null);
         setVoiceState('listening');
-        micRecorderRef.current?.resumeStreaming();
-        if (settingsRef.current.connectionMode === 'turn_based') {
-          startSpeechRecognitionRef.current();
-        }
       }
     },
-    []
+    [startSpeechRecognition]
   );
-
-  useEffect(() => {
-    speakWithBrowserSpeechRef.current = speakWithBrowserSpeech;
-  }, [speakWithBrowserSpeech]);
 
   // Turn-Based Conversation Engine (Fast Chat + Persona Injection + Pipelined TTS)
   const handleTurnBasedMessage = async (userText: string) => {
@@ -552,7 +517,7 @@ export default function App() {
       }
 
       // Add Lila's reply to transcripts & display subtitle
-      const assistantMsgId = addTranscript('assistant', reply, toolExecs, data.sources);
+      addTranscript('assistant', reply, toolExecs, data.sources);
       setLiveSubtitle({ role: 'assistant', text: reply });
 
       // 2. Parallel Cloud TTS Request
@@ -576,7 +541,6 @@ export default function App() {
             const ttsData = await ttsResult.json();
             if (ttsData.audio && audioQueueRef.current) {
               setVoiceState('speaking');
-              setCurrentlyPlayingId(assistantMsgId);
               audioQueueRef.current.playPcm16Chunk(ttsData.audio);
               audioPlayed = true;
             }
@@ -587,7 +551,7 @@ export default function App() {
       }
 
       if (!audioPlayed) {
-        speakWithBrowserSpeech(reply, undefined, assistantMsgId);
+        speakWithBrowserSpeech(reply);
       }
     } catch (err: any) {
       console.error('Turn based error:', err);
@@ -597,16 +561,9 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    handleTurnBasedMessageRef.current = handleTurnBasedMessage;
-  });
-
   // Replay speech for past transcript
-  const replayAudioMessage = async (text: string, msgId?: string) => {
+  const replayAudioMessage = async (text: string) => {
     if (!text.trim()) return;
-    if (msgId) {
-      setCurrentlyPlayingId(msgId);
-    }
     try {
       setVoiceState('speaking');
       const res = await fetch('/api/tts', {
@@ -618,14 +575,13 @@ export default function App() {
       if (res.ok && ct.includes('application/json')) {
         const data = await res.json();
         if (data.audio && audioQueueRef.current) {
-          if (msgId) setCurrentlyPlayingId(msgId);
           audioQueueRef.current.playPcm16Chunk(data.audio);
           return;
         }
       }
-      speakWithBrowserSpeech(text, undefined, msgId);
+      speakWithBrowserSpeech(text);
     } catch (e) {
-      speakWithBrowserSpeech(text, undefined, msgId);
+      speakWithBrowserSpeech(text);
     }
   };
 
@@ -649,35 +605,18 @@ export default function App() {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
-      let recorder = micRecorderRef.current;
-      if (!recorder) {
-        recorder = new MicRecorder((base64Chunk) => {
-          if (
-            wsRef.current?.readyState === WebSocket.OPEN &&
-            voiceStateRef.current === 'listening' &&
-            !isMutedRef.current
-          ) {
-            wsRef.current.send(JSON.stringify({ type: 'audio', audio: base64Chunk }));
-          }
-        }, settingsRef.current.alwaysAllowMic);
-        micRecorderRef.current = recorder;
-
-        const micStarted = await recorder.start();
-        if (!micStarted) {
-          setMicPermissionDenied(true);
-          setSettings((prev) => ({ ...prev, connectionMode: 'turn_based' }));
-          setVoiceState('listening');
-        } else {
-          setMicPermissionDenied(false);
-          setMicPermissionStatus('granted');
+      const recorder = new MicRecorder((base64Chunk) => {
+        if (
+          ws.readyState === WebSocket.OPEN &&
+          voiceStateRef.current === 'listening' &&
+          !isMutedRef.current
+        ) {
+          ws.send(JSON.stringify({ type: 'audio', audio: base64Chunk }));
         }
-      } else {
-        recorder.resumeStreaming();
-      }
+      });
 
       ws.onopen = () => {
         setVoiceState('listening');
-        micRecorderRef.current?.resumeStreaming();
         if (initialSpokenPrompt && initialSpokenPrompt.trim()) {
           addTranscript('user', initialSpokenPrompt);
           setLiveSubtitle({ role: 'user', text: initialSpokenPrompt });
@@ -692,10 +631,8 @@ export default function App() {
 
           if (data.type === 'socket_ready' || data.type === 'ready' || data.type === 'connected') {
             setVoiceState('listening');
-            micRecorderRef.current?.resumeStreaming();
           } else if (data.type === 'audio' && data.data) {
             setVoiceState('speaking');
-            micRecorderRef.current?.pauseStreaming();
             if (audioQueueRef.current) {
               audioQueueRef.current.playPcm16Chunk(data.data);
             }
@@ -703,14 +640,12 @@ export default function App() {
             const role = data.role === 'user' ? 'user' : 'assistant';
             setLiveSubtitle({ role, text: data.text });
             if (role === 'assistant') {
-              const assistantMsgId = addTranscript('assistant', data.text);
-              setCurrentlyPlayingId(assistantMsgId);
+              addTranscript('assistant', data.text);
             } else {
               addTranscript('user', data.text);
             }
           } else if (data.type === 'interrupted') {
             handleInterrupt();
-            micRecorderRef.current?.resumeStreaming();
           } else if (data.type === 'tool_start') {
             setVoiceState('thinking');
             const newTool: ToolCallEvent = {
@@ -738,28 +673,6 @@ export default function App() {
                 console.warn('Popup blocked, URL in HUD');
               }
             }
-
-            // Fast Safety Watchdog: If audio stream does not start within 1000ms after tool completion,
-            // immediately speak the result summary and reopen conversation mode (listening)
-            const resultMsg = data.result?.message;
-            setTimeout(() => {
-              if (voiceStateRef.current === 'thinking') {
-                if (resultMsg && typeof resultMsg === 'string' && resultMsg.length > 0) {
-                  speakWithBrowserSpeech(resultMsg, () => {
-                    setVoiceState('listening');
-                    micRecorderRef.current?.resumeStreaming();
-                  });
-                } else {
-                  setVoiceState('listening');
-                  micRecorderRef.current?.resumeStreaming();
-                }
-              }
-            }, 1000);
-          } else if (data.type === 'turn_complete') {
-            if (voiceStateRef.current === 'thinking') {
-              setVoiceState('listening');
-              micRecorderRef.current?.resumeStreaming();
-            }
           } else if (data.type === 'live_unavailable') {
             console.warn('Gemini Live fallback to Turn-Based mode:', data.message);
             setSettings((prev) => ({ ...prev, connectionMode: 'turn_based' }));
@@ -786,6 +699,17 @@ export default function App() {
           disconnectSession();
         }
       };
+
+      recorder.start().then((micStarted) => {
+        if (!micStarted) {
+          setMicPermissionDenied(true);
+          setSettings((prev) => ({ ...prev, connectionMode: 'turn_based' }));
+          setVoiceState('listening');
+        } else {
+          setMicPermissionDenied(false);
+          micRecorderRef.current = recorder;
+        }
+      });
     } catch (err: any) {
       console.error('Failed to connect:', err);
       setErrorMessage(err.message || 'Could not start voice session.');
@@ -794,11 +718,7 @@ export default function App() {
   };
 
   // Disconnect voice session
-  const disconnectSession = useCallback((forceCloseMic: boolean = false) => {
-    if (settings.soundEffects && voiceStateRef.current !== 'disconnected') {
-      playSoundCue('disconnect');
-    }
-
+  const disconnectSession = useCallback(() => {
     if (wsRef.current) {
       try {
         wsRef.current.close();
@@ -809,12 +729,8 @@ export default function App() {
     }
 
     if (micRecorderRef.current) {
-      if (forceCloseMic || !settingsRef.current.alwaysAllowMic) {
-        micRecorderRef.current.stop(true);
-        micRecorderRef.current = null;
-      } else {
-        micRecorderRef.current.pauseStreaming();
-      }
+      micRecorderRef.current.stop();
+      micRecorderRef.current = null;
     }
 
     if (audioQueueRef.current) {
@@ -835,20 +751,17 @@ export default function App() {
     }
 
     setVoiceState('disconnected');
-    setCurrentlyPlayingId(null);
     setLiveSubtitle(null);
   }, [settings.soundEffects]);
 
   // Main Toggle Button Action
   const toggleVoiceConnection = () => {
+    triggerHaptic(25);
     if (voiceState === 'disconnected') {
       if (settings.connectionMode === 'live_websocket') {
         connectLiveWebSocket();
       } else {
         setVoiceState('listening');
-        if (settings.soundEffects) {
-          playSoundCue('connect');
-        }
         startSpeechRecognition();
       }
     } else {
@@ -859,6 +772,7 @@ export default function App() {
   // Wake-Up Trigger Action (handles both voice wake detection and manual test trigger)
   const triggerWakeWordActivation = useCallback(
     (remainingQuery?: string) => {
+      triggerHaptic([30, 60, 30]);
       setIsWakeWordDetected(true);
       setTimeout(() => setIsWakeWordDetected(false), 1400);
 
@@ -958,11 +872,15 @@ export default function App() {
 
     standbyRecognizer.onend = () => {
       if (!isAbortedCleanly && voiceStateRef.current === 'disconnected' && settingsRef.current.wakeWordEnabled) {
-        try {
-          standbyRecognizer.start();
-        } catch (e) {
-          // ignore
-        }
+        setTimeout(() => {
+          if (!isAbortedCleanly && voiceStateRef.current === 'disconnected' && settingsRef.current.wakeWordEnabled) {
+            try {
+              standbyRecognizer.start();
+            } catch (e) {
+              // ignore
+            }
+          }
+        }, 2000);
       }
     };
 
@@ -991,21 +909,8 @@ export default function App() {
 
   // Handle Text/Chip Submission
   const handleTextSubmit = async (textToSubmit?: string) => {
-    const rawMessage = textToSubmit || textInput;
-    if (!rawMessage.trim() || isProcessingText) return;
-
-    const trimmed = rawMessage.trim();
-
-    // Secret trigger command for girlfriend mode
-    if (
-      trimmed.toLowerCase() === '/girlfriend' ||
-      trimmed.toLowerCase() === 'secret girlfriend' ||
-      trimmed.toLowerCase() === 'unlock girlfriend'
-    ) {
-      setTextInput('');
-      handleSecretUnlockGirlfriend();
-      return;
-    }
+    const messageToSend = textToSubmit || textInput;
+    if (!messageToSend.trim() || isProcessingText) return;
 
     setTextInput('');
     setIsProcessingText(true);
@@ -1015,27 +920,16 @@ export default function App() {
     }
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      addTranscript('user', trimmed);
-      setLiveSubtitle({ role: 'user', text: trimmed });
-      wsRef.current.send(JSON.stringify({ type: 'text', text: trimmed }));
+      addTranscript('user', messageToSend);
+      setLiveSubtitle({ role: 'user', text: messageToSend });
+      wsRef.current.send(JSON.stringify({ type: 'text', text: messageToSend }));
       setVoiceState('thinking');
     } else {
-      await handleTurnBasedMessage(trimmed);
+      await handleTurnBasedMessage(messageToSend);
     }
 
     setIsProcessingText(false);
   };
-
-  // Secret girlfriend unlock handler
-  const handleSecretUnlockGirlfriend = useCallback(() => {
-    setSecretGirlfriendUnlocked(true);
-    setSettings((prev) => ({ ...prev, persona: 'girlfriend' }));
-    setPersonaToast('💖 Secret Girlfriend Mode Activated');
-    setTimeout(() => setPersonaToast(null), 3500);
-    if (settingsRef.current.soundEffects) {
-      playSoundCue('pop');
-    }
-  }, []);
 
   // Quick switch persona handler
   const handleSelectPersona = (pId: LilaPersonaId) => {
@@ -1045,31 +939,6 @@ export default function App() {
     setTimeout(() => setPersonaToast(null), 3000);
     if (settings.soundEffects) {
       playSoundCue('pop');
-    }
-  };
-
-  // Check microphone permission status on mount
-  useEffect(() => {
-    getMicrophonePermissionStatus().then((status) => {
-      setMicPermissionStatus(status);
-      if (status === 'granted') {
-        setMicPermissionDenied(false);
-      }
-    });
-  }, []);
-
-  const handleRequestAlwaysAllowMic = async () => {
-    try {
-      const ok = await requestMicrophoneAccess();
-      if (ok) {
-        setMicPermissionStatus('granted');
-        setMicPermissionDenied(false);
-        setSettings((prev) => ({ ...prev, alwaysAllowMic: true }));
-        setPersonaToast('Permanent Mic Access Enabled! (माइक हमेशा चालू रहेगा)');
-        setTimeout(() => setPersonaToast(null), 3000);
-      }
-    } catch (e) {
-      console.warn('Error enabling permanent mic:', e);
     }
   };
 
@@ -1102,7 +971,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [voiceState, handleInterrupt]);
 
-  const isDark = theme === 'dark';
   const activePersonaObj = LILA_PERSONAS[settings.persona] || LILA_PERSONAS.friend;
   const activeWakeObj =
     LILA_WAKE_WORDS.find((w) => w.id === settings.wakeWord) || LILA_WAKE_WORDS[0];
@@ -1110,42 +978,8 @@ export default function App() {
   return (
     <div
       id="lila-app-root"
-      className={`min-h-screen flex flex-col justify-between selection:bg-rose-500 selection:text-white font-sans relative overflow-x-hidden transition-colors duration-300 ${
-        isDark ? 'bg-[#0E1015] text-[#ECEFF4]' : 'bg-[#FAFAFA] text-[#1D1D1F]'
-      }`}
+      className="min-h-screen bg-[#FAFAFA] dark:bg-[#0E0E12] text-[#1D1D1F] dark:text-gray-100 flex flex-col justify-between selection:bg-black dark:selection:bg-white selection:text-white dark:selection:text-black font-sans relative overflow-x-hidden transition-colors duration-300"
     >
-      {/* Animated Subtle Background Glow & Floating Mesh */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <motion.div
-          animate={{
-            scale: [1, 1.15, 1],
-            x: [0, 20, 0],
-            y: [0, -15, 0],
-            opacity: isDark ? [0.12, 0.22, 0.12] : [0.35, 0.55, 0.35],
-          }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
-          className={`absolute -top-32 left-1/2 -translate-x-1/2 w-[550px] h-[550px] rounded-full blur-3xl ${
-            settings.persona === 'girlfriend'
-              ? 'bg-rose-500/30'
-              : isDark
-              ? 'bg-purple-600/20'
-              : 'bg-rose-100/70'
-          }`}
-        />
-        <motion.div
-          animate={{
-            scale: [1.1, 0.95, 1.1],
-            x: [0, -25, 0],
-            y: [0, 20, 0],
-            opacity: isDark ? [0.08, 0.16, 0.08] : [0.25, 0.45, 0.25],
-          }}
-          transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-          className={`absolute -bottom-24 right-1/4 w-[480px] h-[480px] rounded-full blur-3xl ${
-            isDark ? 'bg-indigo-600/15' : 'bg-orange-100/50'
-          }`}
-        />
-      </div>
-
       {/* Top Header */}
       <Header
         voiceState={voiceState}
@@ -1154,16 +988,12 @@ export default function App() {
         persona={settings.persona}
         wakeWordEnabled={settings.wakeWordEnabled}
         wakeWord={settings.wakeWord}
-        alwaysAllowMic={settings.alwaysAllowMic}
-        micPermissionStatus={micPermissionStatus}
-        onRequestAlwaysAllowMic={handleRequestAlwaysAllowMic}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTranscripts={() => setIsTranscriptOpen(true)}
         transcriptCount={messages.length}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onSecretUnlockGirlfriend={handleSecretUnlockGirlfriend}
-        isGirlfriendMode={settings.persona === 'girlfriend'}
+        theme={settings.theme}
+        isDark={isDark}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* Main Interactive Stage */}
@@ -1172,16 +1002,12 @@ export default function App() {
         <AnimatePresence>
           {personaToast && (
             <motion.div
-              initial={{ opacity: 0, y: -16, scale: 0.95 }}
+              initial={{ opacity: 0, y: -12, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -16, scale: 0.95 }}
-              className={`fixed top-18 z-40 px-4 py-2 rounded-full text-xs font-medium shadow-xl flex items-center gap-2 border ${
-                isDark
-                  ? 'bg-[#181A20] text-white border-[#2B2F3A] shadow-[0_8px_30px_rgba(0,0,0,0.5)]'
-                  : 'bg-black text-white border-black/10'
-              }`}
+              exit={{ opacity: 0, y: -12, scale: 0.95 }}
+              className="fixed top-18 z-40 px-4 py-2 rounded-full bg-black dark:bg-white text-white dark:text-black text-xs font-medium shadow-xl flex items-center gap-2"
             >
-              <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400 animate-pulse" />
+              <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400" />
               <span>{personaToast}</span>
             </motion.div>
           )}
@@ -1192,19 +1018,13 @@ export default function App() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`w-full max-w-lg mb-3 px-4 py-3 rounded-2xl border text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${
-              isDark
-                ? 'bg-amber-950/40 border-amber-800/60 text-amber-200'
-                : 'bg-amber-50/90 border-amber-200 text-amber-900'
-            }`}
+            className="w-full max-w-lg mb-3 px-4 py-3 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-700/60 text-amber-900 dark:text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs"
           >
             <div className="flex items-center gap-2.5">
-              <MicOff className="w-4 h-4 text-amber-500 shrink-0" />
+              <MicOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <div>
-                <span className={`font-medium ${isDark ? 'text-amber-100' : 'text-amber-950'}`}>
-                  Microphone Access Needed
-                </span>
-                <p className={`text-[11px] mt-0.5 ${isDark ? 'text-amber-300/90' : 'text-amber-800/90'}`}>
+                <span className="font-medium text-amber-950 dark:text-amber-100">Microphone Access Needed</span>
+                <p className="text-[11px] text-amber-800/90 dark:text-amber-300 mt-0.5">
                   Allow mic for voice and wake word "{activeWakeObj.label}", or type below.
                 </p>
               </div>
@@ -1226,19 +1046,13 @@ export default function App() {
                     console.warn('Retry mic permission:', e);
                   }
                 }}
-                className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-colors cursor-pointer ${
-                  isDark
-                    ? 'bg-amber-900/60 border-amber-700 text-amber-100 hover:bg-amber-800'
-                    : 'bg-white border-amber-300 text-amber-900 hover:bg-amber-100'
-                }`}
+                className="px-2.5 py-1 text-[11px] font-semibold bg-white dark:bg-[#1C1C24] border border-amber-300 dark:border-amber-600 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-200 transition-colors cursor-pointer"
               >
                 Allow Mic
               </button>
               <button
                 onClick={() => setMicPermissionDenied(false)}
-                className={`text-sm font-semibold p-1 cursor-pointer ${
-                  isDark ? 'text-amber-400 hover:text-amber-200' : 'text-amber-600 hover:text-amber-900'
-                }`}
+                className="text-amber-600 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200 text-sm font-semibold p-1 cursor-pointer"
                 title="Dismiss"
               >
                 ✕
@@ -1252,19 +1066,15 @@ export default function App() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`w-full max-w-lg mb-3 px-4 py-3 rounded-2xl border text-xs flex items-center justify-between gap-3 shadow-xs ${
-              isDark
-                ? 'bg-red-950/40 border-red-800/60 text-red-200'
-                : 'bg-red-50 border border-red-200 text-red-700'
-            }`}
+            className="w-full max-w-lg mb-3 px-4 py-3 rounded-2xl bg-red-50 dark:bg-rose-950/40 border border-red-200 dark:border-rose-800/60 text-red-700 dark:text-rose-200 text-xs flex items-center justify-between gap-3 shadow-xs"
           >
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-red-500 dark:text-rose-400 shrink-0" />
               <span>{errorMessage}</span>
             </div>
             <button
               onClick={() => setErrorMessage(null)}
-              className={`font-semibold cursor-pointer ${isDark ? 'text-red-400 hover:text-red-200' : 'text-red-500 hover:text-red-800'}`}
+              className="text-red-500 dark:text-rose-400 hover:text-red-800 dark:hover:text-rose-100 font-semibold cursor-pointer"
             >
               ✕
             </button>
@@ -1272,35 +1082,19 @@ export default function App() {
         )}
 
         {/* Hero Title & Subtitle */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-center max-w-xl mx-auto mb-2 space-y-1.5 select-none"
-        >
-          <h1
-            className={`text-3xl sm:text-4xl font-serif font-normal tracking-tight ${
-              isDark ? 'text-white' : 'text-[#1D1D1F]'
-            }`}
-          >
+        <div className="text-center max-w-xl mx-auto mb-2 space-y-1.5 select-none">
+          <h1 className="text-3xl sm:text-4xl font-serif font-normal tracking-tight text-[#1D1D1F] dark:text-[#F4F4F5]">
             What can I do for you today?
           </h1>
-          <p className={`text-xs sm:text-sm font-light max-w-md mx-auto ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-            Lila responds in friendly, natural Hinglish using{' '}
-            <span className={`font-semibold ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>"आप"</span>{' '}
-            with the tone of your chosen persona.
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 font-light max-w-md mx-auto">
+            Lila responds in friendly, natural Hinglish using <span className="font-semibold text-gray-700 dark:text-gray-200">"आप"</span> with the tone of your chosen persona.
           </p>
-        </motion.div>
+        </div>
 
-        {/* Persona Quick Switcher Pill Bar (Girlfriend mode strictly hidden unless unlocked/active) */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-          className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 my-2.5 max-w-xl mx-auto"
-        >
+        {/* Persona Quick Switcher Pill Bar */}
+        <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 my-2.5 max-w-xl mx-auto">
           {(Object.keys(LILA_PERSONAS) as LilaPersonaId[])
-            .filter((pId) => !LILA_PERSONAS[pId].isSecret || (secretGirlfriendUnlocked && settings.persona === 'girlfriend'))
+            .filter((pId) => !LILA_PERSONAS[pId].isSecret || settings.secretGirlfriendEnabled)
             .map((pId) => {
               const p = LILA_PERSONAS[pId];
               const isSelected = settings.persona === pId;
@@ -1315,17 +1109,11 @@ export default function App() {
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 border shadow-2xs cursor-pointer ${
                     isSelected
                       ? isSecret
-                        ? 'bg-rose-600 text-white border-rose-600 font-semibold ring-2 ring-rose-300'
-                        : isDark
-                        ? 'bg-white text-black border-white font-semibold ring-2 ring-white/20'
-                        : 'bg-black text-white border-black font-semibold ring-2 ring-black/10'
+                        ? 'bg-rose-600 text-white border-rose-600 font-semibold ring-2 ring-rose-300 dark:ring-rose-700'
+                        : 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white font-semibold ring-2 ring-black/10 dark:ring-white/20'
                       : isSecret
-                      ? isDark
-                        ? 'bg-rose-950/40 text-rose-300 border-rose-800'
-                        : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
-                      : isDark
-                      ? 'bg-[#181A20] text-gray-300 border-[#2B2F3A] hover:border-gray-500 hover:bg-white/10'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/50 hover:border-rose-300'
+                      : 'bg-white dark:bg-[#1A1A22] text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20 hover:bg-gray-50 dark:hover:bg-white/5'
                   }`}
                   title={p.description}
                 >
@@ -1334,52 +1122,30 @@ export default function App() {
                       isSelected
                         ? isSecret
                           ? 'text-white'
-                          : isDark
-                          ? 'text-rose-500'
-                          : 'text-pink-300'
+                          : 'text-pink-300 dark:text-pink-600'
                         : isSecret
-                        ? 'text-rose-400'
-                        : isDark
-                        ? 'text-gray-400'
-                        : 'text-gray-400'
+                        ? 'text-rose-500 dark:text-rose-400'
+                        : 'text-gray-400 dark:text-gray-400'
                     }`}
                   />
                   <span>{p.name.split(' ')[0]}</span>
                   {isSecret ? (
-                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rose-200/60 text-rose-900 font-semibold">
+                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rose-200/60 dark:bg-rose-900/70 text-rose-900 dark:text-rose-200 font-semibold">
                       Secret
                     </span>
                   ) : (
-                    <span
-                      className={`text-[10px] opacity-75 ${
-                        isSelected
-                          ? isDark
-                            ? 'text-gray-700'
-                            : 'text-gray-200'
-                          : isDark
-                          ? 'text-gray-500'
-                          : 'text-gray-400'
-                      }`}
-                    >
+                    <span className={`text-[10px] opacity-75 ${isSelected ? 'text-gray-200 dark:text-gray-700' : 'text-gray-400 dark:text-gray-500'}`}>
                       ({p.hindiName.split('/')[0].trim().slice(0, 8)})
                     </span>
                   )}
                 </button>
               );
             })}
-        </motion.div>
+        </div>
 
         {/* Wake Word Trigger Banner & Test Button */}
         {voiceState === 'disconnected' && settings.wakeWordEnabled && (
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`flex items-center gap-2 my-1 px-3.5 py-1.5 rounded-full border text-[11px] shadow-2xs ${
-              isDark
-                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
-                : 'bg-emerald-50/70 border-emerald-200/60 text-emerald-900'
-            }`}
-          >
+          <div className="flex items-center gap-2 my-1 px-3 py-1 rounded-full bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-700/50 text-[11px] text-emerald-900 dark:text-emerald-300 shadow-2xs">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
             <span>
               Wake Word Active: Say <strong>"{activeWakeObj.label}"</strong>
@@ -1387,21 +1153,17 @@ export default function App() {
             <button
               id="simulate-wake-word-hero-btn"
               onClick={() => triggerWakeWordActivation()}
-              className={`ml-1 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
-                isDark
-                  ? 'bg-[#181A20] text-emerald-200 border-emerald-700 hover:bg-emerald-900/50'
-                  : 'text-emerald-950 bg-white hover:bg-emerald-100 border-emerald-300'
-              }`}
+              className="ml-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-950 dark:text-emerald-100 bg-white dark:bg-[#1C1C24] hover:bg-emerald-100 dark:hover:bg-emerald-900/60 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700 transition-colors cursor-pointer"
               title="Test Wake Word flow"
             >
-              <Play className="w-2.5 h-2.5 fill-emerald-500" />
+              <Play className="w-2.5 h-2.5 fill-emerald-800 dark:fill-emerald-400 text-emerald-800 dark:text-emerald-400" />
               <span>Test Wake</span>
             </button>
-          </motion.div>
+          </div>
         )}
 
         {/* Real-time Tool Execution HUD (Website opener, Search Grounding, Date/Time) */}
-        <ToolHUD activeTools={activeTools} onDismiss={handleDismissTool} theme={theme} />
+        <ToolHUD activeTools={activeTools} onDismiss={handleDismissTool} />
 
         {/* Central Reactive Voice Orb & Waveform Visualizer */}
         <VoiceOrb
@@ -1416,12 +1178,13 @@ export default function App() {
           wakeWordEnabled={settings.wakeWordEnabled}
           wakeWordLabel={activeWakeObj.label}
           isWakeWordDetected={isWakeWordDetected}
-          theme={theme}
+          ringAnimation={settings.ringAnimation || 'golden_spirals'}
+          isDark={isDark}
         />
       </main>
 
-      {/* Bottom Floating Bar with Input Fallback, Status Info & Footer Credits */}
-      <footer className="w-full max-w-2xl mx-auto px-4 pb-4 pt-1.5 z-10 space-y-2.5">
+      {/* Bottom Floating Bar with Input Fallback & Status Info */}
+      <footer className="w-full max-w-2xl mx-auto px-4 pb-6 pt-1.5 z-10 space-y-2">
         {/* Clean Minimalist Rounded-Full Input Bar */}
         <form
           id="lila-text-input-form"
@@ -1429,11 +1192,7 @@ export default function App() {
             e.preventDefault();
             handleTextSubmit();
           }}
-          className={`relative flex items-center rounded-full border p-1.5 shadow-[0_4px_24px_rgba(0,0,0,0.03)] transition-all ${
-            isDark
-              ? 'bg-[#181A20] border-[#2B2F3A] hover:border-gray-500 focus-within:ring-2 focus-within:ring-white/10 focus-within:border-white'
-              : 'bg-white border-gray-200 hover:border-gray-300 focus-within:ring-2 focus-within:ring-black/5 focus-within:border-black'
-          }`}
+          className="relative flex items-center bg-white dark:bg-[#16161D] border border-gray-200 dark:border-white/10 rounded-full shadow-[0_4px_24px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.3)] hover:border-gray-300 dark:hover:border-white/20 p-1.5 focus-within:ring-2 focus-within:ring-black/5 dark:focus-within:ring-white/10 focus-within:border-black dark:focus-within:border-white transition-all"
         >
           <input
             id="lila-text-input"
@@ -1448,51 +1207,39 @@ export default function App() {
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
             disabled={isProcessingText}
-            className={`flex-1 bg-transparent px-4 py-2 text-xs sm:text-sm placeholder-gray-400 focus:outline-none font-light ${
-              isDark ? 'text-white' : 'text-[#1D1D1F]'
-            }`}
+            className="flex-1 bg-transparent px-4 py-2 text-xs sm:text-sm text-[#1D1D1F] dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none font-light"
           />
 
           <button
             type="submit"
             id="lila-submit-text-btn"
             disabled={!textInput.trim() || isProcessingText}
-            className={`p-2 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0 shadow-sm cursor-pointer ${
-              isDark
-                ? 'bg-white text-black hover:bg-gray-200'
-                : 'bg-black text-white hover:bg-neutral-800'
-            }`}
+            className="p-2 rounded-full bg-black dark:bg-white text-white dark:text-black hover:bg-neutral-800 dark:hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0 shadow-sm cursor-pointer"
             title="Send to Lila"
           >
             <Send className="w-3.5 h-3.5" />
           </button>
         </form>
 
-        {/* Status Hint */}
-        <div className={`flex items-center justify-between text-[11px] px-3 font-light ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+        {/* Bottom Status Hint */}
+        <div className="flex items-center justify-between text-[11px] text-gray-400 dark:text-gray-500 px-3 font-light">
           <span className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Respect: "आप" (Hinglish)</span>
-            <span className={isDark ? 'text-gray-600' : 'text-gray-300'}>·</span>
-            <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>Persona: {activePersonaObj.name.split(' ')[0]}</span>
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-gray-600 dark:text-gray-300 font-medium">Respect: "आप" (Hinglish)</span>
+            <span className="text-gray-300 dark:text-gray-600">·</span>
+            <span className="text-gray-500 dark:text-gray-400">Persona: {activePersonaObj.name.split(' ')[0]}</span>
           </span>
-          <span className="hidden sm:inline">Tip: Press Spacebar to talk or interrupt</span>
+          <span>Tip: Press Spacebar to talk or interrupt</span>
         </div>
 
-        {/* Requested Attribution Credits */}
-        <div
-          id="lila-footer-credits"
-          className={`pt-2 border-t flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-3 text-xs tracking-wide select-none ${
-            isDark ? 'border-white/5 text-gray-400' : 'border-gray-200/80 text-gray-500'
-          }`}
-        >
-          <span className="flex items-center gap-1">
-            Made by <span className={`font-medium ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>Daksh Damor</span>
-          </span>
-          <span className={`hidden sm:inline ${isDark ? 'text-gray-600' : 'text-gray-300'}`}>•</span>
-          <span className="flex items-center gap-1">
-            Inspired by <span className={`font-medium ${isDark ? 'text-rose-400' : 'text-rose-600'}`}>Meera</span>
-          </span>
+        {/* Creator Attribution */}
+        <div id="lila-creator-attribution" className="text-center pt-2 pb-1 space-y-0.5 select-none">
+          <p className="text-[11px] font-medium text-gray-600 dark:text-gray-300 tracking-tight">
+            Made by Daksh Damor
+          </p>
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 font-light italic">
+            Inspired by Meera
+          </p>
         </div>
       </footer>
 
@@ -1501,18 +1248,12 @@ export default function App() {
         messages={messages}
         isOpen={isTranscriptOpen}
         onClose={() => setIsTranscriptOpen(false)}
-        onClear={() => {
-          setMessages([]);
-          setCurrentlyPlayingId(null);
-        }}
-        onReplayAudio={(text, id) => {
-          replayAudioMessage(text, id);
+        onClear={() => setMessages([])}
+        onReplayAudio={(text) => {
+          replayAudioMessage(text);
         }}
         liveSubtitle={liveSubtitle}
         showSubtitles={settings.showSubtitles}
-        theme={theme}
-        currentlyPlayingId={currentlyPlayingId}
-        voiceState={voiceState}
       />
 
       {/* Voice, Persona & Wake Word Settings Modal */}
@@ -1524,7 +1265,6 @@ export default function App() {
         onPreviewGreeting={(greeting) => {
           speakWithBrowserSpeech(greeting);
         }}
-        theme={theme}
       />
     </div>
   );

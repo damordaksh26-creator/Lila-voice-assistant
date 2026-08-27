@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="lilaGlow" cx="50%" cy="50%" r="50%" fx="30%" fy="30%">
+      <stop offset="0%" stop-color="#FF758C" />
+      <stop offset="50%" stop-color="#FF7EB3" />
+      <stop offset="100%" stop-color="#7B2CBF" />
+    </radialGradient>
+    <radialGradient id="centerOrb" cx="40%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95" />
+      <stop offset="35%" stop-color="#FF9EAA" stop-opacity="0.9" />
+      <stop offset="70%" stop-color="#E040FB" stop-opacity="0.75" />
+      <stop offset="100%" stop-color="#3A0CA3" stop-opacity="0.95" />
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#7B2CBF" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="512" height="512" rx="112" fill="#0D0D11" />
+  
+  <!-- Outer Ambient Glow Ring -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#lilaGlow)" stroke-width="6" stroke-opacity="0.4" filter="url(#shadow)" />
+  
+  <!-- Voice Wave Accents -->
+  <circle cx="256" cy="256" r="145" fill="none" stroke="#FF7EB3" stroke-width="3" stroke-opacity="0.6" stroke-dasharray="12 8" />
+  
+  <!-- Core Lila Orb -->
+  <circle cx="256" cy="256" r="105" fill="url(#centerOrb)" filter="url(#shadow)" />
+  
+  <!-- Center Voice Sparkle / Wave Icon -->
+  <path d="M256 186 C256 220 230 246 196 246 C230 246 256 272 256 306 C256 272 282 246 316 246 C282 246 256 220 256 186 Z" fill="#FFFFFF" opacity="0.95" />
+  
+  <!-- Small audio dots -->
+  <circle cx="180" cy="256" r="8" fill="#FFFFFF" opacity="0.8" />
+  <circle cx="332" cy="256" r="8" fill="#FFFFFF" opacity="0.8" />
+  <circle cx="256" cy="150" r="6" fill="#FFD166" opacity="0.9" />
+  <circle cx="256" cy="362" r="6" fill="#4CC9F0" opacity="0.9" />
+</svg>

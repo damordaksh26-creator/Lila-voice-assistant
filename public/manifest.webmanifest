@@ -1,20 +1,52 @@
 {
-  "name": "Lila - Hindi Voice AI Assistant",
+  "name": "Lila — Voice AI Assistant",
   "short_name": "Lila AI",
-  "description": "Sweet, fast, and natural Hinglish Voice AI companion powered by Gemini Live",
+  "description": "A sweet, soft-spoken, witty, and deeply respectful Hindi AI voice companion powered by real-time voice streaming.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
+  "orientation": "portrait",
   "background_color": "#FAFAFA",
-  "theme_color": "#1D1D1F",
+  "theme_color": "#18181B",
+  "lang": "hi-IN",
+  "categories": ["lifestyle", "entertainment", "productivity", "utilities"],
   "icons": [
     {
-      "src": "/audio/listening.wav",
-      "type": "image/svg+xml",
+      "src": "/icons/icon.svg",
       "sizes": "192x192 512x512",
-      "purpose": "any maskable"
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ],
-  "categories": ["utilities", "productivity", "entertainment"],
-  "lang": "hi-IN"
+  "shortcuts": [
+    {
+      "name": "Start Voice Chat",
+      "short_name": "Voice Chat",
+      "description": "Start talking directly with Lila",
+      "url": "/?start=voice",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Best Friend Mode (सहेली)",
+      "short_name": "Friend Mode",
+      "description": "Talk to Lila as your sweet best friend",
+      "url": "/?persona=friend",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Girlfriend Mode (प्यारी लीला)",
+      "short_name": "Girlfriend",
+      "description": "Talk to Lila in loving girlfriend mode",
+      "url": "/?persona=girlfriend",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192" }]
+    }
+  ],
+  "prefer_related_applications": false
 }

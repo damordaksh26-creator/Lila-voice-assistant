@@ -1,6 +1,6 @@
 {
   "name": "Lila - Voice AI Assistant",
-  "description": "A sweet, cheerful, and witty young Hindi AI voice companion featuring real-time bidirectional audio streaming, pitch modulation, web tools, dynamic subtitles, and expressive speech.",
+  "description": "A sweet, cheerful, and witty young Hindi AI voice companion featuring real-time bidirectional audio streaming, pitch modulation, web tools, dynamic subtitles, expressive speech, and a silky smooth interface.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

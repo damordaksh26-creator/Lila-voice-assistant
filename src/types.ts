@@ -6,7 +6,13 @@ export type LilaPersonaId = 'friend' | 'family' | 'counselor' | 'assistant' | 'm
 
 export type WakeWordOption = 'hey_lila' | 'ok_lila' | 'suno_lila' | 'namaste_lila' | 'any';
 
-export type ThemeMode = 'light' | 'dark';
+export type RingAnimationStyle =
+  | 'golden_spirals'
+  | 'cosmic_pulse'
+  | 'quantum_orbit'
+  | 'soundwave_bars'
+  | 'celestial_gyro'
+  | 'supernova_flares';
 
 export interface LilaPersona {
   id: LilaPersonaId;
@@ -50,6 +56,8 @@ export interface TranscriptMessage {
   sources?: Array<{ title: string; uri: string }>;
 }
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 export interface VoiceSettingsConfig {
   voice: VoiceName;
   pitch: number; // 0.70 to 1.35 multiplier
@@ -61,7 +69,10 @@ export interface VoiceSettingsConfig {
   soundEffects: boolean;
   showSubtitles: boolean;
   connectionMode: 'live_websocket' | 'turn_based';
-  secretGirlfriendUnlocked?: boolean;
+  secretGirlfriendEnabled?: boolean;
   alwaysAllowMic: boolean;
+  ringAnimation: RingAnimationStyle;
+  theme: ThemeMode;
 }
+
 
