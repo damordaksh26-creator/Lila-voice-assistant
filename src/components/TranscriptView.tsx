@@ -1,17 +1,19 @@
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Trash2, Volume2, Sparkles, User, ExternalLink, X } from 'lucide-react';
-import { TranscriptMessage } from '../types';
+import { MessageSquare, Trash2, Volume2, Sparkles, User, ExternalLink, X, Activity } from 'lucide-react';
+import { TranscriptMessage, VoiceState } from '../types';
 
 interface TranscriptViewProps {
   messages: TranscriptMessage[];
   isOpen: boolean;
   onClose: () => void;
   onClear: () => void;
-  onReplayAudio?: (text: string) => void;
+  onReplayAudio?: (text: string, id?: string) => void;
   liveSubtitle?: { role: 'user' | 'assistant'; text: string } | null;
   showSubtitles: boolean;
   theme?: 'light' | 'dark';
+  currentlyPlayingId?: string | null;
+  voiceState?: VoiceState;
 }
 
 export const TranscriptView: React.FC<TranscriptViewProps> = ({
@@ -23,16 +25,19 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
   liveSubtitle,
   showSubtitles,
   theme = 'light',
+  currentlyPlayingId,
+  voiceState = 'disconnected',
 }) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const isDark = theme === 'dark';
+  const isAssistantSpeaking = voiceState === 'speaking';
 
   // Auto-scroll to bottom of transcripts
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, liveSubtitle]);
+  }, [messages, liveSubtitle, currentlyPlayingId]);
 
   return (
     <>
@@ -44,33 +49,63 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
           exit={{ opacity: 0, y: -10 }}
           className="fixed bottom-28 inset-x-4 max-w-xl mx-auto z-20 pointer-events-none flex justify-center"
         >
-          <div
-            className={`px-5 py-2.5 rounded-full border backdrop-blur-md shadow-[0_8px_30px_rgba(0,0,0,0.12)] flex items-center gap-3 transition-colors ${
-              isDark
-                ? 'bg-[#181A20]/95 border-[#2B2F3A] text-white'
-                : 'bg-white/95 border-gray-200 text-[#1D1D1F]'
+          <motion.div
+            animate={
+              isAssistantSpeaking && liveSubtitle.role === 'assistant'
+                ? {
+                    boxShadow: isDark
+                      ? [
+                          '0 8px 30px rgba(0,0,0,0.12), 0 0 0 1px rgba(244,63,94,0.3)',
+                          '0 8px 30px rgba(0,0,0,0.12), 0 0 16px 2px rgba(244,63,94,0.35), 0 0 0 1.5px rgba(244,63,94,0.8)',
+                          '0 8px 30px rgba(0,0,0,0.12), 0 0 0 1px rgba(244,63,94,0.3)',
+                        ]
+                      : [
+                          '0 8px 30px rgba(0,0,0,0.12), 0 0 0 1px rgba(244,63,94,0.3)',
+                          '0 8px 30px rgba(0,0,0,0.12), 0 0 14px 2px rgba(244,63,94,0.25), 0 0 0 1.5px rgba(244,63,94,0.7)',
+                          '0 8px 30px rgba(0,0,0,0.12), 0 0 0 1px rgba(244,63,94,0.3)',
+                        ],
+                  }
+                : {}
+            }
+            transition={{
+              duration: 2,
+              repeat: Infinity,
+              ease: 'easeInOut',
+            }}
+            className={`px-5 py-2.5 rounded-full border backdrop-blur-md flex items-center gap-3 transition-colors ${
+              isAssistantSpeaking && liveSubtitle.role === 'assistant'
+                ? isDark
+                  ? 'bg-[#181A20]/95 border-rose-500/80 text-white'
+                  : 'bg-white/95 border-rose-400/90 text-[#1D1D1F]'
+                : isDark
+                ? 'bg-[#181A20]/95 border-[#2B2F3A] text-white shadow-[0_8px_30px_rgba(0,0,0,0.12)]'
+                : 'bg-white/95 border-gray-200 text-[#1D1D1F] shadow-[0_8px_30px_rgba(0,0,0,0.12)]'
             }`}
           >
             <span
               className={`w-2 h-2 rounded-full shrink-0 ${
                 liveSubtitle.role === 'assistant'
                   ? isDark
-                    ? 'bg-white animate-pulse'
-                    : 'bg-black animate-pulse'
+                    ? 'bg-rose-400 animate-pulse'
+                    : 'bg-rose-600 animate-pulse'
                   : 'bg-gray-400'
               }`}
             />
             <p className="text-xs sm:text-sm font-medium leading-snug">
               <span
                 className={`font-semibold mr-1.5 uppercase text-[10px] tracking-wider ${
-                  isDark ? 'text-gray-400' : 'text-gray-400'
+                  liveSubtitle.role === 'assistant'
+                    ? isDark
+                      ? 'text-rose-400'
+                      : 'text-rose-600'
+                    : 'text-gray-400'
                 }`}
               >
                 {liveSubtitle.role === 'assistant' ? 'Lila' : 'You'}:
               </span>
               {liveSubtitle.text}
             </p>
-          </div>
+          </motion.div>
         </motion.div>
       )}
 
@@ -162,8 +197,16 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                     </p>
                   </div>
                 ) : (
-                  messages.map((msg) => {
+                  messages.map((msg, idx) => {
                     const isAssistant = msg.role === 'assistant';
+                    const isLastAssistantMessage =
+                      isAssistant &&
+                      idx === messages.map((m) => m.role).lastIndexOf('assistant');
+                    const isCurrentlyPlaying =
+                      isAssistant &&
+                      (voiceState === 'speaking' || currentlyPlayingId === msg.id) &&
+                      (msg.id === currentlyPlayingId ||
+                        (voiceState === 'speaking' && !currentlyPlayingId && isLastAssistantMessage));
 
                     return (
                       <div
@@ -172,23 +215,67 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                       >
                         {isAssistant && (
                           <div
-                            className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 shadow-sm ${
-                              isDark ? 'bg-white' : 'bg-black'
+                            className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 shadow-sm transition-all duration-300 ${
+                              isCurrentlyPlaying
+                                ? isDark
+                                  ? 'bg-rose-500 ring-2 ring-rose-400/50 shadow-[0_0_12px_rgba(244,63,94,0.45)]'
+                                  : 'bg-rose-600 ring-2 ring-rose-400/50 shadow-[0_0_12px_rgba(244,63,94,0.3)]'
+                                : isDark
+                                ? 'bg-white'
+                                : 'bg-black'
                             }`}
                           >
-                            <div className={`w-1.5 h-1.5 rounded-full ${isDark ? 'bg-black' : 'bg-white'}`} />
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                isCurrentlyPlaying
+                                  ? 'bg-white animate-ping'
+                                  : isDark
+                                  ? 'bg-black'
+                                  : 'bg-white'
+                              }`}
+                            />
                           </div>
                         )}
 
-                        <div
-                          className={`max-w-[84%] rounded-2xl p-4 space-y-2 shadow-xs transition-colors ${
+                        <motion.div
+                          animate={
+                            isCurrentlyPlaying
+                              ? {
+                                  boxShadow: isDark
+                                    ? [
+                                        '0 0 0 1px rgba(244,63,94,0.35), 0 0 0px rgba(244,63,94,0)',
+                                        '0 0 0 1.5px rgba(244,63,94,0.8), 0 0 18px 2px rgba(244,63,94,0.32)',
+                                        '0 0 0 1px rgba(244,63,94,0.35), 0 0 0px rgba(244,63,94,0)',
+                                      ]
+                                    : [
+                                        '0 0 0 1px rgba(244,63,94,0.35), 0 0 0px rgba(244,63,94,0)',
+                                        '0 0 0 1.5px rgba(244,63,94,0.7), 0 0 16px 2px rgba(244,63,94,0.22)',
+                                        '0 0 0 1px rgba(244,63,94,0.35), 0 0 0px rgba(244,63,94,0)',
+                                      ],
+                                }
+                              : {}
+                          }
+                          transition={
+                            isCurrentlyPlaying
+                              ? {
+                                  duration: 2.2,
+                                  repeat: Infinity,
+                                  ease: 'easeInOut',
+                                }
+                              : { duration: 0.2 }
+                          }
+                          className={`max-w-[84%] rounded-2xl p-4 space-y-2 transition-all relative ${
                             isAssistant
-                              ? isDark
-                                ? 'bg-[#181A20] border border-[#2B2F3A] text-white rounded-tl-sm'
-                                : 'bg-white border border-gray-200 text-[#1D1D1F] rounded-tl-sm'
+                              ? isCurrentlyPlaying
+                                ? isDark
+                                  ? 'bg-[#191520] border border-rose-500/80 text-white rounded-tl-sm'
+                                  : 'bg-rose-50/25 border border-rose-400/90 text-[#1D1D1F] rounded-tl-sm'
+                                : isDark
+                                ? 'bg-[#181A20] border border-[#2B2F3A] text-white rounded-tl-sm shadow-xs'
+                                : 'bg-white border border-gray-200 text-[#1D1D1F] rounded-tl-sm shadow-xs'
                               : isDark
-                              ? 'bg-white text-black font-normal rounded-tr-sm'
-                              : 'bg-black text-white rounded-tr-sm'
+                              ? 'bg-white text-black font-normal rounded-tr-sm shadow-xs'
+                              : 'bg-black text-white rounded-tr-sm shadow-xs'
                           }`}
                         >
                           <div
@@ -200,9 +287,30 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                                 : 'text-gray-400'
                             }`}
                           >
-                            <span className="font-semibold uppercase tracking-wider">
-                              {isAssistant ? 'Lila' : 'You'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`font-semibold uppercase tracking-wider ${
+                                  isCurrentlyPlaying
+                                    ? isDark
+                                      ? 'text-rose-400'
+                                      : 'text-rose-600'
+                                    : ''
+                                }`}
+                              >
+                                {isAssistant ? 'Lila' : 'You'}
+                              </span>
+
+                              {isCurrentlyPlaying && (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-500 border border-rose-500/20 animate-pulse">
+                                  <span className="flex items-center gap-0.5">
+                                    <span className="w-0.5 h-2 bg-rose-500 rounded-full animate-bounce [animation-delay:0ms]" />
+                                    <span className="w-0.5 h-2.5 bg-rose-500 rounded-full animate-bounce [animation-delay:150ms]" />
+                                    <span className="w-0.5 h-1.5 bg-rose-500 rounded-full animate-bounce [animation-delay:300ms]" />
+                                  </span>
+                                  <span>Speaking...</span>
+                                </span>
+                              )}
+                            </div>
                             <span className="font-mono">{msg.timestamp}</span>
                           </div>
 
@@ -215,9 +323,9 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                                 isDark ? 'border-white/10' : 'border-gray-100'
                               }`}
                             >
-                              {msg.toolCalls.map((tc, idx) => (
+                              {msg.toolCalls.map((tc, tIdx) => (
                                 <div
-                                  key={idx}
+                                  key={tIdx}
                                   className={`px-2.5 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
                                     isDark
                                       ? 'bg-black/30 border-white/10 text-gray-300'
@@ -242,9 +350,9 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                                 isDark ? 'border-white/10' : 'border-gray-100'
                               }`}
                             >
-                              {msg.sources.slice(0, 2).map((s, idx) => (
+                              {msg.sources.slice(0, 2).map((s, sIdx) => (
                                 <a
-                                  key={idx}
+                                  key={sIdx}
                                   href={s.uri}
                                   target="_blank"
                                   rel="noopener noreferrer"
@@ -265,17 +373,22 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                           {isAssistant && onReplayAudio && (
                             <div className="flex justify-end pt-1">
                               <button
-                                onClick={() => onReplayAudio(msg.text)}
-                                className={`inline-flex items-center gap-1 text-[10px] transition-colors cursor-pointer ${
-                                  isDark ? 'text-gray-400 hover:text-white' : 'text-gray-400 hover:text-black'
+                                onClick={() => onReplayAudio(msg.text, msg.id)}
+                                className={`inline-flex items-center gap-1.5 text-[10px] transition-all px-2.5 py-1 rounded-full cursor-pointer ${
+                                  isCurrentlyPlaying
+                                    ? 'bg-rose-500/15 text-rose-500 font-medium border border-rose-500/30 shadow-xs'
+                                    : isDark
+                                    ? 'text-gray-400 hover:text-white hover:bg-white/5'
+                                    : 'text-gray-400 hover:text-black hover:bg-gray-100'
                                 }`}
+                                title={isCurrentlyPlaying ? 'Currently speaking' : 'Play audio with Lila'}
                               >
-                                <Volume2 className="w-3 h-3" />
-                                <span>Play</span>
+                                <Volume2 className={`w-3 h-3 ${isCurrentlyPlaying ? 'animate-pulse text-rose-500' : ''}`} />
+                                <span>{isCurrentlyPlaying ? 'Speaking...' : 'Play'}</span>
                               </button>
                             </div>
                           )}
-                        </div>
+                        </motion.div>
 
                         {!isAssistant && (
                           <div
@@ -298,4 +411,5 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
     </>
   );
 };
+
 

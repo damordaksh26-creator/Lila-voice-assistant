@@ -29,3 +29,17 @@
   background: rgba(0, 0, 0, 0.16);
 }
 
+@keyframes glow-border-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.35), 0 0 0px rgba(244, 63, 94, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 1.5px rgba(244, 63, 94, 0.75), 0 0 16px rgba(244, 63, 94, 0.3);
+  }
+}
+
+.animate-glow-border {
+  animation: glow-border-pulse 2.2s ease-in-out infinite;
+}
+
+

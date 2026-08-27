@@ -128,6 +128,7 @@ export default function App() {
   // Tools & Transcripts
   const [activeTools, setActiveTools] = useState<ToolCallEvent[]>([]);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [currentlyPlayingId, setCurrentlyPlayingId] = useState<string | null>(null);
   const [micPermissionDenied, setMicPermissionDenied] = useState(false);
   const [micPermissionStatus, setMicPermissionStatus] = useState<
     'granted' | 'prompt' | 'denied' | 'checking'
@@ -196,6 +197,7 @@ export default function App() {
   useEffect(() => {
     const player = new AudioQueuePlayer(24000);
     player.setOnQueueEnd(() => {
+      setCurrentlyPlayingId(null);
       if (voiceStateRef.current === 'speaking' || voiceStateRef.current === 'thinking') {
         setVoiceState('listening');
         if (micRecorderRef.current) {
@@ -260,9 +262,10 @@ export default function App() {
       text: string,
       toolCalls?: ToolCallEvent[],
       sources?: any[]
-    ) => {
+    ): string => {
+      const id = Math.random().toString(36).substring(2, 9);
       const newMsg: TranscriptMessage = {
-        id: Math.random().toString(36).substring(2, 9),
+        id,
         role,
         text,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -270,12 +273,14 @@ export default function App() {
         sources,
       };
       setMessages((prev) => [...prev, newMsg]);
+      return id;
     },
     []
   );
 
   // Stop / Interrupt Lila's speech or thinking
   const handleInterrupt = useCallback(() => {
+    setCurrentlyPlayingId(null);
     if (audioQueueRef.current) {
       audioQueueRef.current.stop();
     }
@@ -389,7 +394,7 @@ export default function App() {
 
   // Helper for immediate browser synthesis fallback (strictly respectful in Hinglish)
   const speakWithBrowserSpeech = useCallback(
-    (text: string, onEndCallback?: () => void) => {
+    (text: string, onEndCallback?: () => void, messageId?: string) => {
       if (!('speechSynthesis' in window)) {
         if (onEndCallback) onEndCallback();
         return;
@@ -432,7 +437,11 @@ export default function App() {
         }
 
         setVoiceState('speaking');
+        if (messageId) {
+          setCurrentlyPlayingId(messageId);
+        }
         utterance.onend = () => {
+          setCurrentlyPlayingId(null);
           setVoiceState('listening');
           micRecorderRef.current?.resumeStreaming();
           if (onEndCallback) {
@@ -443,6 +452,7 @@ export default function App() {
           }
         };
         utterance.onerror = () => {
+          setCurrentlyPlayingId(null);
           setVoiceState('listening');
           micRecorderRef.current?.resumeStreaming();
           if (onEndCallback) {
@@ -454,6 +464,7 @@ export default function App() {
         };
         window.speechSynthesis.speak(utterance);
       } catch (e) {
+        setCurrentlyPlayingId(null);
         setVoiceState('listening');
         micRecorderRef.current?.resumeStreaming();
         if (settingsRef.current.connectionMode === 'turn_based') {
@@ -541,7 +552,7 @@ export default function App() {
       }
 
       // Add Lila's reply to transcripts & display subtitle
-      addTranscript('assistant', reply, toolExecs, data.sources);
+      const assistantMsgId = addTranscript('assistant', reply, toolExecs, data.sources);
       setLiveSubtitle({ role: 'assistant', text: reply });
 
       // 2. Parallel Cloud TTS Request
@@ -565,6 +576,7 @@ export default function App() {
             const ttsData = await ttsResult.json();
             if (ttsData.audio && audioQueueRef.current) {
               setVoiceState('speaking');
+              setCurrentlyPlayingId(assistantMsgId);
               audioQueueRef.current.playPcm16Chunk(ttsData.audio);
               audioPlayed = true;
             }
@@ -575,7 +587,7 @@ export default function App() {
       }
 
       if (!audioPlayed) {
-        speakWithBrowserSpeech(reply);
+        speakWithBrowserSpeech(reply, undefined, assistantMsgId);
       }
     } catch (err: any) {
       console.error('Turn based error:', err);
@@ -590,8 +602,11 @@ export default function App() {
   });
 
   // Replay speech for past transcript
-  const replayAudioMessage = async (text: string) => {
+  const replayAudioMessage = async (text: string, msgId?: string) => {
     if (!text.trim()) return;
+    if (msgId) {
+      setCurrentlyPlayingId(msgId);
+    }
     try {
       setVoiceState('speaking');
       const res = await fetch('/api/tts', {
@@ -603,13 +618,14 @@ export default function App() {
       if (res.ok && ct.includes('application/json')) {
         const data = await res.json();
         if (data.audio && audioQueueRef.current) {
+          if (msgId) setCurrentlyPlayingId(msgId);
           audioQueueRef.current.playPcm16Chunk(data.audio);
           return;
         }
       }
-      speakWithBrowserSpeech(text);
+      speakWithBrowserSpeech(text, undefined, msgId);
     } catch (e) {
-      speakWithBrowserSpeech(text);
+      speakWithBrowserSpeech(text, undefined, msgId);
     }
   };
 
@@ -687,7 +703,8 @@ export default function App() {
             const role = data.role === 'user' ? 'user' : 'assistant';
             setLiveSubtitle({ role, text: data.text });
             if (role === 'assistant') {
-              addTranscript('assistant', data.text);
+              const assistantMsgId = addTranscript('assistant', data.text);
+              setCurrentlyPlayingId(assistantMsgId);
             } else {
               addTranscript('user', data.text);
             }
@@ -818,6 +835,7 @@ export default function App() {
     }
 
     setVoiceState('disconnected');
+    setCurrentlyPlayingId(null);
     setLiveSubtitle(null);
   }, [settings.soundEffects]);
 
@@ -1483,13 +1501,18 @@ export default function App() {
         messages={messages}
         isOpen={isTranscriptOpen}
         onClose={() => setIsTranscriptOpen(false)}
-        onClear={() => setMessages([])}
-        onReplayAudio={(text) => {
-          replayAudioMessage(text);
+        onClear={() => {
+          setMessages([]);
+          setCurrentlyPlayingId(null);
+        }}
+        onReplayAudio={(text, id) => {
+          replayAudioMessage(text, id);
         }}
         liveSubtitle={liveSubtitle}
         showSubtitles={settings.showSubtitles}
         theme={theme}
+        currentlyPlayingId={currentlyPlayingId}
+        voiceState={voiceState}
       />
 
       {/* Voice, Persona & Wake Word Settings Modal */}
