@@ -1,0 +1,20 @@
+{
+  "name": "Lila - Hindi Voice AI Assistant",
+  "short_name": "Lila AI",
+  "description": "Sweet, fast, and natural Hinglish Voice AI companion powered by Gemini Live",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FAFAFA",
+  "theme_color": "#1D1D1F",
+  "icons": [
+    {
+      "src": "/audio/listening.wav",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity", "entertainment"],
+  "lang": "hi-IN"
+}

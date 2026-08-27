@@ -28,6 +28,9 @@ import {
   CheckCircle2,
   AlertCircle,
   HelpCircle,
+  Smartphone,
+  Download,
+  Globe,
 } from 'lucide-react';
 import { LilaPersonaId, VoiceName, VoiceSettingsConfig, WakeWordOption } from '../types';
 import {
@@ -50,6 +53,7 @@ interface VoiceSettingsProps {
   config: VoiceSettingsConfig;
   onChangeConfig: (newConfig: Partial<VoiceSettingsConfig>) => void;
   onPreviewGreeting?: (greetingText: string) => void;
+  onOpenAndroidModal?: () => void;
 }
 
 const PERSONA_ICONS: Record<LilaPersonaId, any> = {
@@ -67,8 +71,9 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
   config,
   onChangeConfig,
   onPreviewGreeting,
+  onOpenAndroidModal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'persona' | 'wake_word' | 'voice' | 'engine'>('persona');
+  const [activeTab, setActiveTab] = useState<'persona' | 'wake_word' | 'voice' | 'engine' | 'android'>('persona');
   const [testWakeWordState, setTestWakeWordState] = useState<'idle' | 'testing' | 'success'>('idle');
   const [micStatus, setMicStatus] = useState<'granted' | 'prompt' | 'denied' | 'checking'>('checking');
   const [isTestingMic, setIsTestingMic] = useState(false);
@@ -294,6 +299,19 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
             >
               <Cpu className="w-3.5 h-3.5" />
               <span>Engine & Mode</span>
+            </button>
+
+            <button
+              id="tab-android"
+              onClick={() => setActiveTab('android')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                activeTab === 'android'
+                  ? 'bg-black text-white shadow-xs'
+                  : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Android App</span>
             </button>
           </div>
 
@@ -1087,6 +1105,69 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                         onChange={(e) => onChangeConfig({ soundEffects: e.target.checked })}
                         className="w-4 h-4 accent-black rounded cursor-pointer"
                       />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 5: ANDROID APP & PWA */}
+            {activeTab === 'android' && (
+              <div className="space-y-5">
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-neutral-900 to-black text-white space-y-3 shadow-md">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-emerald-400">
+                      <Smartphone className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-sm">Lila Android Application</h4>
+                      <p className="text-xs text-gray-300 font-light">Install native APK or run as fullscreen Android PWA</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                    <a
+                      href="/api/download-apk"
+                      download="Lila-Voice-Assistant.apk"
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-white text-black font-semibold text-xs text-center hover:bg-gray-100 transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 text-emerald-600" />
+                      <span>Download Android APK (.apk)</span>
+                    </a>
+                    {onOpenAndroidModal && (
+                      <button
+                        onClick={onOpenAndroidModal}
+                        className="py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Globe className="w-4 h-4 text-sky-400" />
+                        <span>Install PWA Guide</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-2.5">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">
+                    Android Optimization Features
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div className="p-2.5 rounded-xl bg-[#FAFAFA] border border-gray-100 space-y-1">
+                      <span className="font-semibold text-black flex items-center gap-1.5">
+                        <Mic className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Resampled 16kHz Audio</span>
+                      </span>
+                      <p className="text-[11px] text-gray-500 font-light">
+                        Automatic software resampling from 48kHz/44.1kHz down to 16kHz for seamless compatibility with all Android chipsets.
+                      </p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-[#FAFAFA] border border-gray-100 space-y-1">
+                      <span className="font-semibold text-black flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-pink-600" />
+                        <span>2-Sentence Fast Search</span>
+                      </span>
+                      <p className="text-[11px] text-gray-500 font-light">
+                        Google Grounding with 0 thinking budget and memory caching for ultra-snappy web lookups.
+                      </p>
                     </div>
                   </div>
                 </div>

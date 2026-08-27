@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Settings, Radio, Sparkles, Mic, MicOff, HeartHandshake, ShieldCheck } from 'lucide-react';
+import { MessageSquare, Settings, Radio, Sparkles, Mic, MicOff, HeartHandshake, ShieldCheck, Smartphone, Download } from 'lucide-react';
 import { VoiceState, VoiceName, LilaPersonaId, WakeWordOption } from '../types';
 import { LILA_PERSONAS, LILA_WAKE_WORDS } from '../lila';
 
@@ -15,6 +15,7 @@ interface HeaderProps {
   onRequestAlwaysAllowMic?: () => void;
   onOpenSettings: () => void;
   onOpenTranscripts: () => void;
+  onOpenAndroidModal?: () => void;
   transcriptCount: number;
 }
 
@@ -30,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRequestAlwaysAllowMic,
   onOpenSettings,
   onOpenTranscripts,
+  onOpenAndroidModal,
   transcriptCount,
 }) => {
   const isLive = voiceState !== 'disconnected';
@@ -60,6 +62,20 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Center Persona & Wake Word Status Pills */}
         <div className="flex items-center gap-2">
+          {/* Android App Button */}
+          {onOpenAndroidModal && (
+            <button
+              id="lila-header-android-btn"
+              onClick={onOpenAndroidModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-neutral-900 to-black text-white hover:bg-neutral-800 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+              title="Download Lila Android App / APK"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Android App</span>
+              <span className="hidden sm:inline text-[9px] px-1.5 py-0.2 rounded bg-white/20 font-mono">APK</span>
+            </button>
+          )}
+
           {/* Active Persona Switcher Pill */}
           <button
             id="lila-header-persona-btn"

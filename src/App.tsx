@@ -20,6 +20,7 @@ import { VoiceOrb } from './components/VoiceOrb';
 import { ToolHUD } from './components/ToolHUD';
 import { TranscriptView } from './components/TranscriptView';
 import { VoiceSettingsModal } from './components/VoiceSettings';
+import { AndroidAppModal } from './components/AndroidAppModal';
 import {
   VoiceState,
   VoiceSettingsConfig,
@@ -109,8 +110,32 @@ export default function App() {
   // UI Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
+  const [isAndroidModalOpen, setIsAndroidModalOpen] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
   const [textInput, setTextInput] = useState('');
   const [isProcessingText, setIsProcessingText] = useState(false);
+
+  // Listen for PWA beforeinstallprompt on mobile/Chrome
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallPwa = async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choiceResult = await deferredInstallPrompt.userChoice;
+      if (choiceResult.outcome === 'accepted') {
+        setDeferredInstallPrompt(null);
+      }
+    }
+  };
 
   // Refs for Audio Nodes & WebSocket to prevent stale closures
   const wsRef = useRef<WebSocket | null>(null);
@@ -939,8 +964,12 @@ export default function App() {
         persona={settings.persona}
         wakeWordEnabled={settings.wakeWordEnabled}
         wakeWord={settings.wakeWord}
+        alwaysAllowMic={settings.alwaysAllowMic}
+        micPermissionStatus={micPermissionStatus}
+        onRequestAlwaysAllowMic={requestMicrophoneAccess}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTranscripts={() => setIsTranscriptOpen(true)}
+        onOpenAndroidModal={() => setIsAndroidModalOpen(true)}
         transcriptCount={messages.length}
       />
 
@@ -1201,6 +1230,18 @@ export default function App() {
         onPreviewGreeting={(greeting) => {
           speakWithBrowserSpeech(greeting);
         }}
+        onOpenAndroidModal={() => {
+          setIsSettingsOpen(false);
+          setIsAndroidModalOpen(true);
+        }}
+      />
+
+      {/* Android Native APK Download & PWA Install Modal */}
+      <AndroidAppModal
+        isOpen={isAndroidModalOpen}
+        onClose={() => setIsAndroidModalOpen(false)}
+        deferredPrompt={deferredInstallPrompt}
+        onInstallPwa={handleInstallPwa}
       />
     </div>
   );

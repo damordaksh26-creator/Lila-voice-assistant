@@ -21,6 +21,32 @@ export function pcm16ToFloat32(pcm16: Int16Array): Float32Array {
   return out;
 }
 
+/**
+ * High-quality linear audio resampler for converting microphone input
+ * (from 44100Hz or 48000Hz) to 16000Hz PCM required by Gemini Live.
+ */
+export function resampleAudio(
+  inputBuffer: Float32Array,
+  fromSampleRate: number,
+  toSampleRate: number = 16000
+): Float32Array {
+  if (fromSampleRate === toSampleRate || inputBuffer.length === 0) {
+    return inputBuffer;
+  }
+  const ratio = fromSampleRate / toSampleRate;
+  const newLength = Math.max(1, Math.round(inputBuffer.length / ratio));
+  const result = new Float32Array(newLength);
+
+  for (let i = 0; i < newLength; i++) {
+    const origIndex = i * ratio;
+    const indexLow = Math.floor(origIndex);
+    const indexHigh = Math.min(indexLow + 1, inputBuffer.length - 1);
+    const weight = origIndex - indexLow;
+    result[i] = inputBuffer[indexLow] * (1 - weight) + inputBuffer[indexHigh] * weight;
+  }
+  return result;
+}
+
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -147,7 +173,7 @@ export class AudioQueuePlayer {
 
       const now = this.audioCtx.currentTime;
       if (this.nextPlayTime < now) {
-        this.nextPlayTime = now + 0.005; // 5ms buffer for instant playback
+        this.nextPlayTime = now + 0.002; // Ultra-low 2ms buffer for immediate speech start
       }
 
       source.start(this.nextPlayTime);
@@ -239,6 +265,7 @@ export class MicRecorder {
   private analyser: AnalyserNode | null = null;
   private processor: ScriptProcessorNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
+  private muteGain: GainNode | null = null;
   private isRecording = false;
 
   constructor(private onChunk: (base64Chunk: string) => void) {}
@@ -250,9 +277,9 @@ export class MicRecorder {
         return false;
       }
 
+      // Request raw, low-latency audio stream from user device
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: 16000,
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
@@ -261,23 +288,38 @@ export class MicRecorder {
       });
 
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      this.audioCtx = new AudioCtxClass({ sampleRate: 16000 });
+      // Initialize AudioContext at device native sample rate (e.g. 48kHz or 44.1kHz)
+      this.audioCtx = new AudioCtxClass();
+      if (this.audioCtx.state === 'suspended') {
+        await this.audioCtx.resume();
+      }
+
+      const inputSampleRate = this.audioCtx.sampleRate;
+
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 128;
       this.analyser.smoothingTimeConstant = 0.7;
 
       this.source = this.audioCtx.createMediaStreamSource(this.stream);
-      // 1024 buffer size gives ~64ms latency per chunk at 16kHz for ultra-fast response
-      this.processor = this.audioCtx.createScriptProcessor(1024, 1, 1);
+      // Select buffer size according to native sample rate for ~40-60ms chunks
+      const bufferSize = inputSampleRate >= 44100 ? 2048 : 1024;
+      this.processor = this.audioCtx.createScriptProcessor(bufferSize, 1, 1);
+
+      // Create a zero-gain node to prevent microphone feedback loop to speakers
+      this.muteGain = this.audioCtx.createGain();
+      this.muteGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
 
       this.source.connect(this.analyser);
       this.analyser.connect(this.processor);
-      this.processor.connect(this.audioCtx.destination);
+      this.processor.connect(this.muteGain);
+      this.muteGain.connect(this.audioCtx.destination);
 
       this.processor.onaudioprocess = (e) => {
         if (!this.isRecording) return;
         const float32 = e.inputBuffer.getChannelData(0);
-        const pcm16 = float32ToPcm16(float32);
+        // Resample from device native rate (48kHz/44.1kHz) down to 16000Hz for Gemini
+        const resampled16k = resampleAudio(float32, inputSampleRate, 16000);
+        const pcm16 = float32ToPcm16(resampled16k);
         const base64 = arrayBufferToBase64(pcm16.buffer);
         this.onChunk(base64);
       };
@@ -300,6 +342,10 @@ export class MicRecorder {
       this.processor.disconnect();
       this.processor.onaudioprocess = null;
       this.processor = null;
+    }
+    if (this.muteGain) {
+      this.muteGain.disconnect();
+      this.muteGain = null;
     }
     if (this.source) {
       this.source.disconnect();

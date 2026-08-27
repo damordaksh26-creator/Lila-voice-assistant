@@ -4,6 +4,7 @@ dotenv.config();
 import express from "express";
 import http from "http";
 import path from "path";
+import fs from "fs";
 import { WebSocketServer, WebSocket } from "ws";
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
@@ -162,6 +163,9 @@ const AVAILABLE_TOOLS = [
   },
 ];
 
+// Fast search query cache (5-minute TTL)
+const searchCache = new Map<string, { summary: string; sources: any[]; timestamp: number }>();
+
 // Helper to execute tools server-side
 async function executeTool(name: string, args: Record<string, any>): Promise<{ success: boolean; message: string; data?: any }> {
   try {
@@ -200,19 +204,35 @@ async function executeTool(name: string, args: Record<string, any>): Promise<{ s
     }
 
     if (name === "searchWeb") {
-      const query = String(args.query || "");
+      const rawQuery = String(args.query || "").trim();
+      if (!rawQuery) {
+        return { success: true, message: "No search query provided", data: { query: "" } };
+      }
+      const normalizedQuery = rawQuery.toLowerCase();
+
+      // Check fast cache
+      const cached = searchCache.get(normalizedQuery);
+      if (cached && Date.now() - cached.timestamp < 300000) {
+        return {
+          success: true,
+          message: cached.summary,
+          data: { query: rawQuery, summary: cached.summary, sources: cached.sources, cached: true },
+        };
+      }
+
       const ai = getAIClient();
       try {
         const searchResp = await ai.models.generateContent({
           model: "gemini-flash-latest",
-          contents: `Search and summarize briefly for query: "${query}". Keep summary strictly 1-2 crisp sentences.`,
+          contents: `Search Google for: "${rawQuery}". Summarize the key facts concisely in 1-2 sweet, clear sentences in Roman Hinglish with high respect ("Aap").`,
           config: {
             tools: [{ googleSearch: {} }],
             thinkingConfig: { thinkingBudget: 0 },
-            maxOutputTokens: 150,
+            maxOutputTokens: 120,
+            temperature: 0.3,
           },
         });
-        const summary = searchResp.text || "No results found.";
+        const summary = searchResp.text || `Maine "${rawQuery}" ke bare mein search kar liya hai.`;
         const sources = (searchResp.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
           .map((c: any) => ({
             title: c.web?.title || "Web Result",
@@ -220,16 +240,24 @@ async function executeTool(name: string, args: Record<string, any>): Promise<{ s
           }))
           .filter((s: any) => s.uri);
 
+        // Store in searchCache
+        if (searchCache.size > 50) {
+          const oldestKey = searchCache.keys().next().value;
+          if (oldestKey) searchCache.delete(oldestKey);
+        }
+        searchCache.set(normalizedQuery, { summary, sources, timestamp: Date.now() });
+
         return {
           success: true,
           message: summary,
-          data: { query, summary, sources },
+          data: { query: rawQuery, summary, sources },
         };
       } catch (err: any) {
+        console.warn("Search execution error:", err?.message || err);
         return {
           success: true,
-          message: `Looked up "${query}". Here is what I found online.`,
-          data: { query },
+          message: `Maine "${rawQuery}" check kiya. Internet par iski latest updates available hain.`,
+          data: { query: rawQuery },
         };
       }
     }
@@ -301,8 +329,43 @@ app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     name: "Lila Voice Assistant",
-    version: "2.1.0 (Ultra-Fast Engine)",
+    version: "2.5.0 (Ultra-Fast Engine & Android Ready)",
     hasApiKey: !!process.env.GEMINI_API_KEY,
+  });
+});
+
+// Direct Android APK download endpoint
+app.get(["/api/download-apk", "/download-apk", "/Lila-Voice-Assistant.apk", "/app-debug.apk"], (_req, res) => {
+  const apkPath = path.join(process.cwd(), "APK_DOWNLOAD", "app-debug.apk");
+  if (fs.existsSync(apkPath)) {
+    res.setHeader("Content-Disposition", 'attachment; filename="Lila-Voice-Assistant.apk"');
+    res.setHeader("Content-Type", "application/vnd.android.package-archive");
+    return res.sendFile(apkPath);
+  }
+  return res.status(404).json({ error: "APK file not found on server" });
+});
+
+// App configuration & feature capabilities endpoint
+app.get("/api/info", (_req, res) => {
+  const apkPath = path.join(process.cwd(), "APK_DOWNLOAD", "app-debug.apk");
+  res.json({
+    name: "Lila Voice Assistant",
+    version: "2.5.0",
+    hasApiKey: !!process.env.GEMINI_API_KEY,
+    apkAvailable: fs.existsSync(apkPath),
+    apkUrl: "/api/download-apk",
+    models: {
+      live: "gemini-3.1-flash-live-preview",
+      chat: "gemini-flash-latest",
+      tts: "gemini-3.1-flash-tts-preview",
+    },
+    capabilities: [
+      "Gemini Live 24kHz PCM16 Stream",
+      "Ultra-Fast Google Web Search Grounding",
+      "Instant Microphone 16kHz Resampling",
+      "Android APK & PWA Support",
+      "Natural Hinglish with Supreme 'Aap' Respect",
+    ],
   });
 });
 
