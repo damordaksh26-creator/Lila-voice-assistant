@@ -20,13 +20,13 @@ import { VoiceOrb } from './components/VoiceOrb';
 import { ToolHUD } from './components/ToolHUD';
 import { TranscriptView } from './components/TranscriptView';
 import { VoiceSettingsModal } from './components/VoiceSettings';
-import { AndroidAppModal } from './components/AndroidAppModal';
 import {
   VoiceState,
   VoiceSettingsConfig,
   ToolCallEvent,
   TranscriptMessage,
   LilaPersonaId,
+  ThemeMode,
 } from './types';
 import {
   LILA_IDENTITY,
@@ -64,7 +64,7 @@ const DEFAULT_SETTINGS: VoiceSettingsConfig = {
   soundEffects: true,
   showSubtitles: true,
   connectionMode: 'live_websocket',
-  secretGirlfriendEnabled: true, // Girlfriend mode enabled
+  secretGirlfriendUnlocked: false,
 };
 
 const loadInitialSettings = (): VoiceSettingsConfig => {
@@ -77,7 +77,7 @@ const loadInitialSettings = (): VoiceSettingsConfig => {
         parsed.pitch === undefined || parsed.pitch === 1.0 || parsed.pitch === 1.06
           ? 1.10
           : parsed.pitch;
-      return { ...DEFAULT_SETTINGS, ...parsed, pitch, alwaysAllowMic: true, secretGirlfriendEnabled: true };
+      return { ...DEFAULT_SETTINGS, ...parsed, pitch, alwaysAllowMic: true };
     }
   } catch (e) {
     // fallback
@@ -93,8 +93,37 @@ export default function App() {
   const [micLevel, setMicLevel] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Settings
+  // Settings & Theme
   const [settings, setSettings] = useState<VoiceSettingsConfig>(loadInitialSettings);
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    try {
+      const saved = localStorage.getItem('lila_theme');
+      return (saved === 'dark' || saved === 'light') ? saved : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next: ThemeMode = prev === 'light' ? 'dark' : 'light';
+      try {
+        localStorage.setItem('lila_theme', next);
+      } catch (e) {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  // Synchronize dark class to html document
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
 
   // Tools & Transcripts
   const [activeTools, setActiveTools] = useState<ToolCallEvent[]>([]);
@@ -111,36 +140,15 @@ export default function App() {
   // Wake Word & Persona Visual Feedback
   const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
   const [personaToast, setPersonaToast] = useState<string | null>(null);
+  const [secretGirlfriendUnlocked, setSecretGirlfriendUnlocked] = useState(() => {
+    return settings.persona === 'girlfriend';
+  });
 
   // UI Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
-  const [isAndroidModalOpen, setIsAndroidModalOpen] = useState(false);
-  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
   const [textInput, setTextInput] = useState('');
   const [isProcessingText, setIsProcessingText] = useState(false);
-
-  // Listen for PWA beforeinstallprompt on mobile/Chrome
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredInstallPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
-  }, []);
-
-  const handleInstallPwa = async () => {
-    if (deferredInstallPrompt) {
-      deferredInstallPrompt.prompt();
-      const choiceResult = await deferredInstallPrompt.userChoice;
-      if (choiceResult.outcome === 'accepted') {
-        setDeferredInstallPrompt(null);
-      }
-    }
-  };
 
   // Refs for Audio Nodes & WebSocket to prevent stale closures
   const wsRef = useRef<WebSocket | null>(null);
@@ -315,21 +323,16 @@ export default function App() {
     };
 
     recognition.onresult = (event: any) => {
-      let interim = '';
-      let final = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          final += event.results[i][0].transcript;
-        } else {
-          interim += event.results[i][0].transcript;
-        }
+      let accumulated = '';
+      for (let i = 0; i < event.results.length; ++i) {
+        accumulated += ' ' + event.results[i][0].transcript;
       }
-      const currentText = (final || interim).trim();
+      const currentText = accumulated.trim();
       if (currentText) {
         latestTranscriptRef.current = currentText;
         setLiveSubtitle({ role: 'user', text: currentText });
 
-        // Smart Silence VAD: automatically submit after 450ms of user silence
+        // Smart Silence VAD: automatically submit after 950ms of user silence
         if (speechSilenceTimerRef.current) {
           clearTimeout(speechSilenceTimerRef.current);
         }
@@ -344,7 +347,7 @@ export default function App() {
             }
             handleTurnBasedMessageRef.current(captured);
           }
-        }, 450);
+        }, 950);
       }
     };
 
@@ -970,8 +973,21 @@ export default function App() {
 
   // Handle Text/Chip Submission
   const handleTextSubmit = async (textToSubmit?: string) => {
-    const messageToSend = textToSubmit || textInput;
-    if (!messageToSend.trim() || isProcessingText) return;
+    const rawMessage = textToSubmit || textInput;
+    if (!rawMessage.trim() || isProcessingText) return;
+
+    const trimmed = rawMessage.trim();
+
+    // Secret trigger command for girlfriend mode
+    if (
+      trimmed.toLowerCase() === '/girlfriend' ||
+      trimmed.toLowerCase() === 'secret girlfriend' ||
+      trimmed.toLowerCase() === 'unlock girlfriend'
+    ) {
+      setTextInput('');
+      handleSecretUnlockGirlfriend();
+      return;
+    }
 
     setTextInput('');
     setIsProcessingText(true);
@@ -981,16 +997,27 @@ export default function App() {
     }
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      addTranscript('user', messageToSend);
-      setLiveSubtitle({ role: 'user', text: messageToSend });
-      wsRef.current.send(JSON.stringify({ type: 'text', text: messageToSend }));
+      addTranscript('user', trimmed);
+      setLiveSubtitle({ role: 'user', text: trimmed });
+      wsRef.current.send(JSON.stringify({ type: 'text', text: trimmed }));
       setVoiceState('thinking');
     } else {
-      await handleTurnBasedMessage(messageToSend);
+      await handleTurnBasedMessage(trimmed);
     }
 
     setIsProcessingText(false);
   };
+
+  // Secret girlfriend unlock handler
+  const handleSecretUnlockGirlfriend = useCallback(() => {
+    setSecretGirlfriendUnlocked(true);
+    setSettings((prev) => ({ ...prev, persona: 'girlfriend' }));
+    setPersonaToast('💖 Secret Girlfriend Mode Activated');
+    setTimeout(() => setPersonaToast(null), 3500);
+    if (settingsRef.current.soundEffects) {
+      playSoundCue('pop');
+    }
+  }, []);
 
   // Quick switch persona handler
   const handleSelectPersona = (pId: LilaPersonaId) => {
@@ -1057,6 +1084,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [voiceState, handleInterrupt]);
 
+  const isDark = theme === 'dark';
   const activePersonaObj = LILA_PERSONAS[settings.persona] || LILA_PERSONAS.friend;
   const activeWakeObj =
     LILA_WAKE_WORDS.find((w) => w.id === settings.wakeWord) || LILA_WAKE_WORDS[0];
@@ -1064,8 +1092,42 @@ export default function App() {
   return (
     <div
       id="lila-app-root"
-      className="min-h-screen bg-[#FAFAFA] text-[#1D1D1F] flex flex-col justify-between selection:bg-black selection:text-white font-sans relative overflow-x-hidden"
+      className={`min-h-screen flex flex-col justify-between selection:bg-rose-500 selection:text-white font-sans relative overflow-x-hidden transition-colors duration-300 ${
+        isDark ? 'bg-[#0E1015] text-[#ECEFF4]' : 'bg-[#FAFAFA] text-[#1D1D1F]'
+      }`}
     >
+      {/* Animated Subtle Background Glow & Floating Mesh */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <motion.div
+          animate={{
+            scale: [1, 1.15, 1],
+            x: [0, 20, 0],
+            y: [0, -15, 0],
+            opacity: isDark ? [0.12, 0.22, 0.12] : [0.35, 0.55, 0.35],
+          }}
+          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+          className={`absolute -top-32 left-1/2 -translate-x-1/2 w-[550px] h-[550px] rounded-full blur-3xl ${
+            settings.persona === 'girlfriend'
+              ? 'bg-rose-500/30'
+              : isDark
+              ? 'bg-purple-600/20'
+              : 'bg-rose-100/70'
+          }`}
+        />
+        <motion.div
+          animate={{
+            scale: [1.1, 0.95, 1.1],
+            x: [0, -25, 0],
+            y: [0, 20, 0],
+            opacity: isDark ? [0.08, 0.16, 0.08] : [0.25, 0.45, 0.25],
+          }}
+          transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+          className={`absolute -bottom-24 right-1/4 w-[480px] h-[480px] rounded-full blur-3xl ${
+            isDark ? 'bg-indigo-600/15' : 'bg-orange-100/50'
+          }`}
+        />
+      </div>
+
       {/* Top Header */}
       <Header
         voiceState={voiceState}
@@ -1079,8 +1141,11 @@ export default function App() {
         onRequestAlwaysAllowMic={handleRequestAlwaysAllowMic}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTranscripts={() => setIsTranscriptOpen(true)}
-        onOpenAndroidModal={() => setIsAndroidModalOpen(true)}
         transcriptCount={messages.length}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onSecretUnlockGirlfriend={handleSecretUnlockGirlfriend}
+        isGirlfriendMode={settings.persona === 'girlfriend'}
       />
 
       {/* Main Interactive Stage */}
@@ -1089,12 +1154,16 @@ export default function App() {
         <AnimatePresence>
           {personaToast && (
             <motion.div
-              initial={{ opacity: 0, y: -12, scale: 0.95 }}
+              initial={{ opacity: 0, y: -16, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -12, scale: 0.95 }}
-              className="fixed top-18 z-40 px-4 py-2 rounded-full bg-black text-white text-xs font-medium shadow-xl flex items-center gap-2"
+              exit={{ opacity: 0, y: -16, scale: 0.95 }}
+              className={`fixed top-18 z-40 px-4 py-2 rounded-full text-xs font-medium shadow-xl flex items-center gap-2 border ${
+                isDark
+                  ? 'bg-[#181A20] text-white border-[#2B2F3A] shadow-[0_8px_30px_rgba(0,0,0,0.5)]'
+                  : 'bg-black text-white border-black/10'
+              }`}
             >
-              <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400" />
+              <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400 animate-pulse" />
               <span>{personaToast}</span>
             </motion.div>
           )}
@@ -1105,13 +1174,19 @@ export default function App() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-lg mb-3 px-4 py-3 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs"
+            className={`w-full max-w-lg mb-3 px-4 py-3 rounded-2xl border text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${
+              isDark
+                ? 'bg-amber-950/40 border-amber-800/60 text-amber-200'
+                : 'bg-amber-50/90 border-amber-200 text-amber-900'
+            }`}
           >
             <div className="flex items-center gap-2.5">
-              <MicOff className="w-4 h-4 text-amber-600 shrink-0" />
+              <MicOff className="w-4 h-4 text-amber-500 shrink-0" />
               <div>
-                <span className="font-medium text-amber-950">Microphone Access Needed</span>
-                <p className="text-[11px] text-amber-800/90 mt-0.5">
+                <span className={`font-medium ${isDark ? 'text-amber-100' : 'text-amber-950'}`}>
+                  Microphone Access Needed
+                </span>
+                <p className={`text-[11px] mt-0.5 ${isDark ? 'text-amber-300/90' : 'text-amber-800/90'}`}>
                   Allow mic for voice and wake word "{activeWakeObj.label}", or type below.
                 </p>
               </div>
@@ -1133,13 +1208,19 @@ export default function App() {
                     console.warn('Retry mic permission:', e);
                   }
                 }}
-                className="px-2.5 py-1 text-[11px] font-semibold bg-white border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900 transition-colors"
+                className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-colors cursor-pointer ${
+                  isDark
+                    ? 'bg-amber-900/60 border-amber-700 text-amber-100 hover:bg-amber-800'
+                    : 'bg-white border-amber-300 text-amber-900 hover:bg-amber-100'
+                }`}
               >
                 Allow Mic
               </button>
               <button
                 onClick={() => setMicPermissionDenied(false)}
-                className="text-amber-600 hover:text-amber-900 text-sm font-semibold p-1"
+                className={`text-sm font-semibold p-1 cursor-pointer ${
+                  isDark ? 'text-amber-400 hover:text-amber-200' : 'text-amber-600 hover:text-amber-900'
+                }`}
                 title="Dismiss"
               >
                 ✕
@@ -1153,15 +1234,19 @@ export default function App() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-lg mb-3 px-4 py-3 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center justify-between gap-3 shadow-xs"
+            className={`w-full max-w-lg mb-3 px-4 py-3 rounded-2xl border text-xs flex items-center justify-between gap-3 shadow-xs ${
+              isDark
+                ? 'bg-red-950/40 border-red-800/60 text-red-200'
+                : 'bg-red-50 border border-red-200 text-red-700'
+            }`}
           >
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
               <span>{errorMessage}</span>
             </div>
             <button
               onClick={() => setErrorMessage(null)}
-              className="text-red-500 hover:text-red-800 font-semibold"
+              className={`font-semibold cursor-pointer ${isDark ? 'text-red-400 hover:text-red-200' : 'text-red-500 hover:text-red-800'}`}
             >
               ✕
             </button>
@@ -1169,19 +1254,35 @@ export default function App() {
         )}
 
         {/* Hero Title & Subtitle */}
-        <div className="text-center max-w-xl mx-auto mb-2 space-y-1.5 select-none">
-          <h1 className="text-3xl sm:text-4xl font-serif font-normal tracking-tight text-[#1D1D1F]">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="text-center max-w-xl mx-auto mb-2 space-y-1.5 select-none"
+        >
+          <h1
+            className={`text-3xl sm:text-4xl font-serif font-normal tracking-tight ${
+              isDark ? 'text-white' : 'text-[#1D1D1F]'
+            }`}
+          >
             What can I do for you today?
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 font-light max-w-md mx-auto">
-            Lila responds in friendly, natural Hinglish using <span className="font-semibold text-gray-700">"आप"</span> with the tone of your chosen persona.
+          <p className={`text-xs sm:text-sm font-light max-w-md mx-auto ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            Lila responds in friendly, natural Hinglish using{' '}
+            <span className={`font-semibold ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>"आप"</span>{' '}
+            with the tone of your chosen persona.
           </p>
-        </div>
+        </motion.div>
 
-        {/* Persona Quick Switcher Pill Bar */}
-        <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 my-2.5 max-w-xl mx-auto">
+        {/* Persona Quick Switcher Pill Bar (Girlfriend mode strictly hidden unless unlocked/active) */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+          className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 my-2.5 max-w-xl mx-auto"
+        >
           {(Object.keys(LILA_PERSONAS) as LilaPersonaId[])
-            .filter((pId) => !LILA_PERSONAS[pId].isSecret || settings.secretGirlfriendEnabled)
+            .filter((pId) => !LILA_PERSONAS[pId].isSecret || (secretGirlfriendUnlocked && settings.persona === 'girlfriend'))
             .map((pId) => {
               const p = LILA_PERSONAS[pId];
               const isSelected = settings.persona === pId;
@@ -1197,9 +1298,15 @@ export default function App() {
                     isSelected
                       ? isSecret
                         ? 'bg-rose-600 text-white border-rose-600 font-semibold ring-2 ring-rose-300'
+                        : isDark
+                        ? 'bg-white text-black border-white font-semibold ring-2 ring-white/20'
                         : 'bg-black text-white border-black font-semibold ring-2 ring-black/10'
                       : isSecret
-                      ? 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100 hover:border-rose-300'
+                      ? isDark
+                        ? 'bg-rose-950/40 text-rose-300 border-rose-800'
+                        : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                      : isDark
+                      ? 'bg-[#181A20] text-gray-300 border-[#2B2F3A] hover:border-gray-500 hover:bg-white/10'
                       : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                   }`}
                   title={p.description}
@@ -1209,9 +1316,13 @@ export default function App() {
                       isSelected
                         ? isSecret
                           ? 'text-white'
+                          : isDark
+                          ? 'text-rose-500'
                           : 'text-pink-300'
                         : isSecret
-                        ? 'text-rose-500'
+                        ? 'text-rose-400'
+                        : isDark
+                        ? 'text-gray-400'
                         : 'text-gray-400'
                     }`}
                   />
@@ -1221,18 +1332,36 @@ export default function App() {
                       Secret
                     </span>
                   ) : (
-                    <span className={`text-[10px] opacity-75 ${isSelected ? 'text-gray-200' : 'text-gray-400'}`}>
+                    <span
+                      className={`text-[10px] opacity-75 ${
+                        isSelected
+                          ? isDark
+                            ? 'text-gray-700'
+                            : 'text-gray-200'
+                          : isDark
+                          ? 'text-gray-500'
+                          : 'text-gray-400'
+                      }`}
+                    >
                       ({p.hindiName.split('/')[0].trim().slice(0, 8)})
                     </span>
                   )}
                 </button>
               );
             })}
-        </div>
+        </motion.div>
 
         {/* Wake Word Trigger Banner & Test Button */}
         {voiceState === 'disconnected' && settings.wakeWordEnabled && (
-          <div className="flex items-center gap-2 my-1 px-3 py-1 rounded-full bg-emerald-50/70 border border-emerald-200/60 text-[11px] text-emerald-900 shadow-2xs">
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`flex items-center gap-2 my-1 px-3.5 py-1.5 rounded-full border text-[11px] shadow-2xs ${
+              isDark
+                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                : 'bg-emerald-50/70 border-emerald-200/60 text-emerald-900'
+            }`}
+          >
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
             <span>
               Wake Word Active: Say <strong>"{activeWakeObj.label}"</strong>
@@ -1240,17 +1369,21 @@ export default function App() {
             <button
               id="simulate-wake-word-hero-btn"
               onClick={() => triggerWakeWordActivation()}
-              className="ml-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-950 bg-white hover:bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 transition-colors cursor-pointer"
+              className={`ml-1 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                isDark
+                  ? 'bg-[#181A20] text-emerald-200 border-emerald-700 hover:bg-emerald-900/50'
+                  : 'text-emerald-950 bg-white hover:bg-emerald-100 border-emerald-300'
+              }`}
               title="Test Wake Word flow"
             >
-              <Play className="w-2.5 h-2.5 fill-emerald-800" />
+              <Play className="w-2.5 h-2.5 fill-emerald-500" />
               <span>Test Wake</span>
             </button>
-          </div>
+          </motion.div>
         )}
 
         {/* Real-time Tool Execution HUD (Website opener, Search Grounding, Date/Time) */}
-        <ToolHUD activeTools={activeTools} onDismiss={handleDismissTool} />
+        <ToolHUD activeTools={activeTools} onDismiss={handleDismissTool} theme={theme} />
 
         {/* Central Reactive Voice Orb & Waveform Visualizer */}
         <VoiceOrb
@@ -1265,11 +1398,12 @@ export default function App() {
           wakeWordEnabled={settings.wakeWordEnabled}
           wakeWordLabel={activeWakeObj.label}
           isWakeWordDetected={isWakeWordDetected}
+          theme={theme}
         />
       </main>
 
-      {/* Bottom Floating Bar with Input Fallback & Status Info */}
-      <footer className="w-full max-w-2xl mx-auto px-4 pb-5 pt-1.5 z-10 space-y-2">
+      {/* Bottom Floating Bar with Input Fallback, Status Info & Footer Credits */}
+      <footer className="w-full max-w-2xl mx-auto px-4 pb-4 pt-1.5 z-10 space-y-2.5">
         {/* Clean Minimalist Rounded-Full Input Bar */}
         <form
           id="lila-text-input-form"
@@ -1277,7 +1411,11 @@ export default function App() {
             e.preventDefault();
             handleTextSubmit();
           }}
-          className="relative flex items-center bg-white border border-gray-200 rounded-full shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:border-gray-300 p-1.5 focus-within:ring-2 focus-within:ring-black/5 focus-within:border-black transition-all"
+          className={`relative flex items-center rounded-full border p-1.5 shadow-[0_4px_24px_rgba(0,0,0,0.03)] transition-all ${
+            isDark
+              ? 'bg-[#181A20] border-[#2B2F3A] hover:border-gray-500 focus-within:ring-2 focus-within:ring-white/10 focus-within:border-white'
+              : 'bg-white border-gray-200 hover:border-gray-300 focus-within:ring-2 focus-within:ring-black/5 focus-within:border-black'
+          }`}
         >
           <input
             id="lila-text-input"
@@ -1292,29 +1430,51 @@ export default function App() {
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
             disabled={isProcessingText}
-            className="flex-1 bg-transparent px-4 py-2 text-xs sm:text-sm text-[#1D1D1F] placeholder-gray-400 focus:outline-none font-light"
+            className={`flex-1 bg-transparent px-4 py-2 text-xs sm:text-sm placeholder-gray-400 focus:outline-none font-light ${
+              isDark ? 'text-white' : 'text-[#1D1D1F]'
+            }`}
           />
 
           <button
             type="submit"
             id="lila-submit-text-btn"
             disabled={!textInput.trim() || isProcessingText}
-            className="p-2 rounded-full bg-black text-white hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0 shadow-sm"
+            className={`p-2 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0 shadow-sm cursor-pointer ${
+              isDark
+                ? 'bg-white text-black hover:bg-gray-200'
+                : 'bg-black text-white hover:bg-neutral-800'
+            }`}
             title="Send to Lila"
           >
             <Send className="w-3.5 h-3.5" />
           </button>
         </form>
 
-        {/* Bottom Status Hint */}
-        <div className="flex items-center justify-between text-[11px] text-gray-400 px-3 font-light">
+        {/* Status Hint */}
+        <div className={`flex items-center justify-between text-[11px] px-3 font-light ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
           <span className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="text-gray-600 font-medium">Respect: "आप" (Hinglish)</span>
-            <span className="text-gray-300">·</span>
-            <span className="text-gray-500">Persona: {activePersonaObj.name.split(' ')[0]}</span>
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+            <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Respect: "आप" (Hinglish)</span>
+            <span className={isDark ? 'text-gray-600' : 'text-gray-300'}>·</span>
+            <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>Persona: {activePersonaObj.name.split(' ')[0]}</span>
           </span>
-          <span>Tip: Press Spacebar to talk or interrupt</span>
+          <span className="hidden sm:inline">Tip: Press Spacebar to talk or interrupt</span>
+        </div>
+
+        {/* Requested Attribution Credits */}
+        <div
+          id="lila-footer-credits"
+          className={`pt-2 border-t flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-3 text-xs tracking-wide select-none ${
+            isDark ? 'border-white/5 text-gray-400' : 'border-gray-200/80 text-gray-500'
+          }`}
+        >
+          <span className="flex items-center gap-1">
+            Made by <span className={`font-medium ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>Daksh Damor</span>
+          </span>
+          <span className={`hidden sm:inline ${isDark ? 'text-gray-600' : 'text-gray-300'}`}>•</span>
+          <span className="flex items-center gap-1">
+            Inspired by <span className={`font-medium ${isDark ? 'text-rose-400' : 'text-rose-600'}`}>Meera</span>
+          </span>
         </div>
       </footer>
 
@@ -1329,6 +1489,7 @@ export default function App() {
         }}
         liveSubtitle={liveSubtitle}
         showSubtitles={settings.showSubtitles}
+        theme={theme}
       />
 
       {/* Voice, Persona & Wake Word Settings Modal */}
@@ -1340,18 +1501,7 @@ export default function App() {
         onPreviewGreeting={(greeting) => {
           speakWithBrowserSpeech(greeting);
         }}
-        onOpenAndroidModal={() => {
-          setIsSettingsOpen(false);
-          setIsAndroidModalOpen(true);
-        }}
-      />
-
-      {/* Android Native APK Download & PWA Install Modal */}
-      <AndroidAppModal
-        isOpen={isAndroidModalOpen}
-        onClose={() => setIsAndroidModalOpen(false)}
-        deferredPrompt={deferredInstallPrompt}
-        onInstallPwa={handleInstallPwa}
+        theme={theme}
       />
     </div>
   );

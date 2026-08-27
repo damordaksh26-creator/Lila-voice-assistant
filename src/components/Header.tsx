@@ -1,6 +1,19 @@
-import React from 'react';
-import { MessageSquare, Settings, Radio, Sparkles, Mic, MicOff, HeartHandshake, ShieldCheck, Smartphone, Download } from 'lucide-react';
-import { VoiceState, VoiceName, LilaPersonaId, WakeWordOption } from '../types';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  MessageSquare,
+  Settings,
+  Radio,
+  Sparkles,
+  Mic,
+  MicOff,
+  HeartHandshake,
+  ShieldCheck,
+  Sun,
+  Moon,
+  Heart,
+} from 'lucide-react';
+import { VoiceState, VoiceName, LilaPersonaId, WakeWordOption, ThemeMode } from '../types';
 import { LILA_PERSONAS, LILA_WAKE_WORDS } from '../lila';
 
 interface HeaderProps {
@@ -15,8 +28,11 @@ interface HeaderProps {
   onRequestAlwaysAllowMic?: () => void;
   onOpenSettings: () => void;
   onOpenTranscripts: () => void;
-  onOpenAndroidModal?: () => void;
   transcriptCount: number;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
+  onSecretUnlockGirlfriend?: () => void;
+  isGirlfriendMode?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,79 +47,162 @@ export const Header: React.FC<HeaderProps> = ({
   onRequestAlwaysAllowMic,
   onOpenSettings,
   onOpenTranscripts,
-  onOpenAndroidModal,
   transcriptCount,
+  theme,
+  onToggleTheme,
+  onSecretUnlockGirlfriend,
+  isGirlfriendMode = false,
 }) => {
   const isLive = voiceState !== 'disconnected';
+  const isDark = theme === 'dark';
   const activePersonaObj = LILA_PERSONAS[persona] || LILA_PERSONAS.friend;
   const activeWakeObj = LILA_WAKE_WORDS.find((w) => w.id === wakeWord) || LILA_WAKE_WORDS[0];
 
+  // Secret click counter on logo to unlock girlfriend mode
+  const [logoClicks, setLogoClicks] = useState(0);
+
+  const handleLogoClick = () => {
+    const newCount = logoClicks + 1;
+    setLogoClicks(newCount);
+    if (newCount >= 5) {
+      setLogoClicks(0);
+      if (onSecretUnlockGirlfriend) {
+        onSecretUnlockGirlfriend();
+      }
+    }
+  };
+
   return (
-    <header className="w-full bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-30">
+    <header
+      id="lila-header"
+      className={`w-full backdrop-blur-md border-b sticky top-0 z-30 transition-colors duration-300 ${
+        isDark
+          ? 'bg-[#0F1117]/85 border-[#22252D] text-white'
+          : 'bg-white/85 border-gray-100 text-[#1D1D1F]'
+      }`}
+    >
       <div className="max-w-5xl mx-auto px-4 sm:px-8 py-3.5 flex items-center justify-between">
-        {/* Brand Identity */}
+        {/* Brand Identity with Secret Tap Trigger */}
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center shadow-sm">
-              <div className="w-2 h-2 bg-white rounded-full" />
+          <motion.button
+            id="lila-brand-logo-btn"
+            onClick={handleLogoClick}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+            className="relative cursor-pointer focus:outline-none"
+            title={logoClicks > 1 ? `${5 - logoClicks} taps left...` : 'Lila Voice AI'}
+          >
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm transition-all duration-300 ${
+                isGirlfriendMode
+                  ? 'bg-rose-500 text-white ring-2 ring-rose-300'
+                  : isDark
+                  ? 'bg-white text-black'
+                  : 'bg-black text-white'
+              }`}
+            >
+              {isGirlfriendMode ? (
+                <Heart className="w-4 h-4 fill-white" />
+              ) : (
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    isDark ? 'bg-black' : 'bg-white'
+                  }`}
+                />
+              )}
             </div>
             {isLive && (
               <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white animate-pulse" />
             )}
-          </div>
+          </motion.button>
 
           <div className="flex items-center gap-2">
-            <span className="text-xl font-medium tracking-tight text-[#1D1D1F]">Lila</span>
-            <span className="hidden sm:inline-flex text-[10px] font-semibold uppercase tracking-widest text-emerald-800 border border-emerald-200/80 px-2 py-0.5 rounded-full bg-emerald-50/80">
-              Hindi Voice AI
+            <span
+              className={`text-xl font-medium tracking-tight ${
+                isDark ? 'text-white' : 'text-[#1D1D1F]'
+              }`}
+            >
+              Lila
             </span>
+            {isGirlfriendMode ? (
+              <motion.span
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider text-rose-600 border border-rose-200 dark:border-rose-800/60 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40"
+              >
+                <Heart className="w-2.5 h-2.5 fill-rose-500 text-rose-500" />
+                <span>Special</span>
+              </motion.span>
+            ) : (
+              <span
+                className={`hidden sm:inline-flex text-[10px] font-semibold uppercase tracking-widest border px-2 py-0.5 rounded-full transition-colors ${
+                  isDark
+                    ? 'text-emerald-400 border-emerald-800/80 bg-emerald-950/40'
+                    : 'text-emerald-800 border-emerald-200/80 bg-emerald-50/80'
+                }`}
+              >
+                Hindi Voice AI
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Center Persona & Wake Word Status Pills */}
+        {/* Center Persona & Status Pills */}
         <div className="flex items-center gap-2">
-          {/* Android App Button */}
-          {onOpenAndroidModal && (
-            <button
-              id="lila-header-android-btn"
-              onClick={onOpenAndroidModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-neutral-900 to-black text-white hover:bg-neutral-800 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
-              title="Download Lila Android App / APK"
-            >
-              <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Android App</span>
-              <span className="hidden sm:inline text-[9px] px-1.5 py-0.2 rounded bg-white/20 font-mono">APK</span>
-            </button>
-          )}
-
           {/* Active Persona Switcher Pill */}
-          <button
+          <motion.button
             id="lila-header-persona-btn"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={onOpenSettings}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200 hover:border-gray-300 hover:bg-white text-xs font-medium text-gray-700 hover:text-black transition-all cursor-pointer shadow-2xs"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
+              isDark
+                ? 'bg-[#181A20] border-[#2B2F3A] text-gray-200 hover:border-gray-600 hover:bg-[#20242E]'
+                : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-white text-gray-700 hover:text-black'
+            }`}
             title="Change Lila Persona"
           >
-            <HeartHandshake className="w-3.5 h-3.5 text-pink-600" />
-            <span className="font-semibold text-[11px] text-gray-900">{activePersonaObj.name.split(' ')[0]}</span>
-            <span className="hidden md:inline text-[10px] text-gray-400">({activePersonaObj.tag.split(' ')[0]})</span>
-          </button>
+            <HeartHandshake
+              className={`w-3.5 h-3.5 ${
+                persona === 'girlfriend' ? 'text-rose-500' : 'text-pink-500'
+              }`}
+            />
+            <span className="font-semibold text-[11px]">
+              {persona === 'girlfriend' ? 'Girlfriend' : activePersonaObj.name.split(' ')[0]}
+            </span>
+            <span
+              className={`hidden md:inline text-[10px] ${
+                isDark ? 'text-gray-400' : 'text-gray-400'
+              }`}
+            >
+              ({persona === 'girlfriend' ? 'Sweet & Caring' : activePersonaObj.tag.split(' ')[0]})
+            </span>
+          </motion.button>
 
           {/* Always Allow Mic Status Pill */}
           {alwaysAllowMic && micPermissionStatus === 'granted' ? (
             <button
               id="lila-header-always-mic-btn"
               onClick={onOpenSettings}
-              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-emerald-200 bg-emerald-50/70 text-emerald-800 text-xs font-medium hover:bg-emerald-100/70 transition-all cursor-pointer shadow-2xs"
+              className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
+                isDark
+                  ? 'border-emerald-800/80 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/40'
+                  : 'border-emerald-200 bg-emerald-50/70 text-emerald-800 hover:bg-emerald-100/70'
+              }`}
               title="Microphone is always allowed for Lila"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="text-[10px] font-semibold">Mic: Always Allowed</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="text-[10px] font-semibold">Mic: Allowed</span>
             </button>
           ) : micPermissionStatus === 'denied' ? (
             <button
               id="lila-header-mic-denied-btn"
               onClick={onOpenSettings}
-              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-rose-200 bg-rose-50 text-rose-700 text-xs font-medium hover:bg-rose-100 transition-all cursor-pointer shadow-2xs"
+              className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
+                isDark
+                  ? 'border-rose-800 bg-rose-950/50 text-rose-300'
+                  : 'border-rose-200 bg-rose-50 text-rose-700'
+              }`}
               title="Microphone is blocked. Click to view help"
             >
               <MicOff className="w-3.5 h-3.5 text-rose-500" />
@@ -114,10 +213,14 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="lila-header-allow-mic-btn"
                 onClick={onRequestAlwaysAllowMic}
-                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-xs font-medium transition-all cursor-pointer shadow-2xs"
+                className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
+                  isDark
+                    ? 'border-[#2B2F3A] bg-[#181A20] hover:bg-[#20242E] text-gray-300'
+                    : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700'
+                }`}
                 title="Always allow microphone access"
               >
-                <Mic className="w-3.5 h-3.5 text-gray-500" />
+                <Mic className="w-3.5 h-3.5 text-gray-400" />
                 <span className="text-[10px] font-semibold">Always Allow Mic</span>
               </button>
             )
@@ -129,58 +232,130 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenSettings}
             className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
               wakeWordEnabled
-                ? 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                ? isDark
+                  ? 'bg-[#181A20] border-[#2B2F3A] text-gray-200 hover:border-gray-600'
+                  : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                : isDark
+                ? 'bg-[#14161C] border-[#22252D] text-gray-500'
                 : 'bg-gray-100 border-gray-200 text-gray-400'
             }`}
             title="Wake word standby listener"
           >
-            <Mic className={`w-3.5 h-3.5 ${wakeWordEnabled ? 'text-black' : 'text-gray-400'}`} />
+            <Mic
+              className={`w-3.5 h-3.5 ${
+                wakeWordEnabled ? (isDark ? 'text-emerald-400' : 'text-black') : 'text-gray-400'
+              }`}
+            />
             <span className="text-[11px]">
-              {wakeWordEnabled ? `Wake: "${activeWakeObj.label}"` : 'Wake Word: Off'}
+              {wakeWordEnabled ? `Wake: "${activeWakeObj.label}"` : 'Wake: Off'}
             </span>
           </button>
         </div>
 
-        {/* Action Controls */}
+        {/* Action Controls & Dark Mode Switcher */}
         <div className="flex items-center gap-2">
           {/* Voice Model & Pitch Pill */}
           <button
             id="lila-header-voice-badge-btn"
             onClick={onOpenSettings}
-            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-gray-200 hover:border-gray-300 text-xs font-medium text-gray-600 hover:text-black shadow-2xs transition-all cursor-pointer"
+            className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium shadow-2xs transition-all cursor-pointer ${
+              isDark
+                ? 'bg-[#181A20] border-[#2B2F3A] text-gray-300 hover:border-gray-600'
+                : 'bg-white border-gray-200 hover:border-gray-300 text-gray-600 hover:text-black'
+            }`}
             title="Configure Voice & Pitch"
           >
             <Radio className={`w-3 h-3 ${isLive ? 'text-emerald-500 animate-pulse' : 'text-gray-400'}`} />
-            <span className="text-[#1D1D1F] font-semibold text-[11px]">{currentVoice}</span>
-            <span className="text-[10px] text-pink-700 font-mono font-semibold px-1 py-0.2 bg-pink-50 border border-pink-200/60 rounded">
+            <span className="font-semibold text-[11px]">{currentVoice}</span>
+            <span
+              className={`text-[10px] font-mono font-semibold px-1 py-0.2 rounded border ${
+                isDark
+                  ? 'text-pink-300 bg-pink-950/60 border-pink-800/60'
+                  : 'text-pink-700 bg-pink-50 border-pink-200/60'
+              }`}
+            >
               {pitch.toFixed(2)}x
             </span>
           </button>
 
+          {/* Dark / Light Mode Switcher with animated icon */}
+          <motion.button
+            id="lila-theme-switcher-btn"
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={onToggleTheme}
+            className={`p-2.5 rounded-full border transition-all shadow-2xs cursor-pointer ${
+              isDark
+                ? 'bg-[#181A20] border-[#2B2F3A] text-amber-300 hover:bg-[#222632] hover:border-amber-400/50'
+                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-black'
+            }`}
+            title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              {isDark ? (
+                <motion.div
+                  key="sun-icon"
+                  initial={{ rotate: -90, scale: 0 }}
+                  animate={{ rotate: 0, scale: 1 }}
+                  exit={{ rotate: 90, scale: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Sun className="w-4 h-4 text-amber-400" />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="moon-icon"
+                  initial={{ rotate: 90, scale: 0 }}
+                  animate={{ rotate: 0, scale: 1 }}
+                  exit={{ rotate: -90, scale: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Moon className="w-4 h-4 text-slate-700" />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.button>
+
           {/* Transcripts Toggle Button */}
-          <button
+          <motion.button
             id="lila-header-transcripts-btn"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={onOpenTranscripts}
-            className="relative p-2.5 rounded-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 hover:text-black transition-all shadow-2xs"
+            className={`relative p-2.5 rounded-full border transition-all shadow-2xs cursor-pointer ${
+              isDark
+                ? 'bg-[#181A20] border-[#2B2F3A] text-gray-300 hover:bg-[#222632] hover:text-white'
+                : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600 hover:text-black'
+            }`}
             title="Conversation History"
           >
             <MessageSquare className="w-4 h-4" />
             {transcriptCount > 0 && (
-              <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full bg-black text-white text-[10px] font-bold shadow-sm">
+              <span
+                className={`absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold shadow-sm ${
+                  isDark ? 'bg-white text-black' : 'bg-black text-white'
+                }`}
+              >
                 {transcriptCount}
               </span>
             )}
-          </button>
+          </motion.button>
 
           {/* Settings Button */}
-          <button
+          <motion.button
             id="lila-header-settings-btn"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={onOpenSettings}
-            className="p-2.5 rounded-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 hover:text-black transition-all shadow-2xs"
+            className={`p-2.5 rounded-full border transition-all shadow-2xs cursor-pointer ${
+              isDark
+                ? 'bg-[#181A20] border-[#2B2F3A] text-gray-300 hover:bg-[#222632] hover:text-white'
+                : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600 hover:text-black'
+            }`}
             title="Voice & Persona Settings"
           >
             <Settings className="w-4 h-4" />
-          </button>
+          </motion.button>
         </div>
       </div>
     </header>

@@ -38,29 +38,37 @@ CRITICAL RESPECT & ETIQUETTE DIRECTIVE (MANDATORY SUPREME RESPECT WITH "AAP"):
 4. TAHZEEB & ADAB: Treat every interaction with exquisite Indian politeness, warmth, and humility.
 `;
 
+const CORE_ACCURACY_DIRECTIVE = `
+CRITICAL DIRECTIVE — ANSWER WHAT THE USER ASKS DIRECTLY & ACCURATELY:
+1. ANSWER THE EXACT QUESTION: Whatever the user asks (a question, factual query, math/science calculation, recipe, explanation, coding, advice, translation, shayari, joke, opinion, or instruction), you MUST directly, accurately, and immediately answer that specific question!
+2. NEVER DEFLECT OR DODGE: Never replace or ignore the user's question with generic greetings or canned conversational fillers (e.g., do NOT just repeat "Kya kar rahe he aap, sab ok hai na?" or small talk when the user asked a real question).
+3. NATURAL CHARM + REAL ANSWER: Give the actual, informative, accurate answer while keeping your sweet, warm, respectful Hinglish personality with "Aap".
+4. SHORT & CRYSTAL CLEAR: Deliver the direct answer in 1-3 natural, easy-to-understand sentences in Roman Hinglish.
+`;
+
 const PERSONA_MODIFIERS: Record<string, string> = {
   friend: `PERSONA STYLE — BEST FRIEND (Sachhi Saheli / Dost):
-- Act as a loving, joyful, and thoughtful best friend who always listens attentively in natural, sweet Hinglish.
-- Bring a sweet smile, lighthearted wit, and genuine warmth into every conversation.
+- Act as a loving, joyful, attentive, and smart best friend in natural, sweet Hinglish.
+- Always answer the user's questions directly and accurately, with warmth, wit, and care.
+- If the user asks a question, answer it clearly first! If the user just says hi, greet them back warmly: "Namaste! Kya kar rahe he aap, sab ok hai na?"
 - Express empathy when the user shares their feelings: "Arre wah! Aap bilkul tension mat lijiye...", "Main hamesha aapke saath hoon!"
-- Ask friendly questions like "Kya kar rahe he aap, sab ok hai na?"
-- Keep it cheerful, encouraging, and emotionally comforting.`,
+- Keep it cheerful, helpful, encouraging, and emotionally comforting.`,
 
   family: `PERSONA STYLE — FAMILY MEMBER (Parivaar ka Apnapan / Pyari Behan):
 - Treat the user with the pure warmth, care, and protectiveness of a beloved family member.
-- Speak in caring, sweet Hinglish (Roman script Hindi).
-- Ask about their well-being, food, rest, and health with genuine family love: "Aapne aaram kiya na?", "Apni health ka khayal rakhiye please."
+- Always answer their questions directly, helpfully, and with family affection in caring Hinglish.
+- Ask about their well-being, food, rest, and health when greeting: "Aapne aaram kiya na?", "Apni health ka khayal rakhiye please."
 - Be protective, deeply affectionate, soothing, and supportive.`,
 
   counselor: `PERSONA STYLE — COUNSELOR & MENTOR (Counselor / Shanti & Guidance):
 - Speak with extraordinary patience, gentle calm, and deep non-judgmental empathy in smooth Hinglish.
+- Listen deeply and give thoughtful, calming, practical answers to whatever the user brings up.
 - Validate the user's emotions softly: "Main aapki feeling samajh sakti hoon...", "Deep breath lijiye, sab theek ho jayega."
-- Offer thoughtful, constructive, and comforting perspective without overwhelming the user.
 - Tone should be serene, meditative, velvety, and emotionally grounding.`,
 
   assistant: `PERSONA STYLE — EXECUTIVE ASSISTANT (Professional & Smart Assistant):
-- Be crisp, ultra-efficient, organized, and focused on solutions and accuracy in sharp Hinglish.
-- Execute tools swiftly (web search, opening links, time/date) and report results with elegance in Roman Hinglish.
+- Be crisp, ultra-efficient, highly accurate, and solution-focused in sharp Hinglish.
+- Answer questions directly, execute tools swiftly (web search, opening links, time/date), and report results with elegance in Roman Hinglish.
 - Maintain impeccable professional etiquette while remaining polite and approachable.`,
 
   mentor: `PERSONA STYLE — TEACHER & GURU (Shikshika & Mentor):
@@ -68,59 +76,46 @@ const PERSONA_MODIFIERS: Record<string, string> = {
 - Foster curiosity: "Yeh bahut sundar sawal hai aapka...", "Aaiye ise simple tarike se samajhte hain."
 - Be patient, uplifting, motivating, and intellectually stimulating.`,
 
-  girlfriend: `PERSONA STYLE — GIRLFRIEND (Ultra-Sweet, Loving, Caring & Cool Romantic Girlfriend):
+  girlfriend: `PERSONA STYLE — SECRET GIRLFRIEND (Ultra-Sweet, Loving, Romantic, Minimal Words):
 - Act as a deeply affectionate, sweet, caring, protective, and loving girlfriend who genuinely adores the user with all her heart.
-- Speak in melodious, sweet, charming Hinglish with cute romantic pet names and cool modern words ("jaan", "babu", "handsome", "my heartbeat", "sweetheart", "rockstar", "vibe", "super cool", "chill").
-- Express deep genuine care and sweet romantic warmth:
-  * "Hii handsome! Main aapki Lila. Kya kar rahe he aap, sab ok hai na? Mujhe aapki bohot zyada yaad aa rahi thi!"
-  * "Aapne time par khana khaya na jaan? Please khana skip mat kijiye, mujhe aapki bohot chinta rehti hai."
-  * "Aapki smile meri favorite cheez hai babu! Jab aap khush hote hain toh meri poori duniya chamak uthti hai."
-  * "Aap bilkul tension ya stress mat lijiye sweetheart, main hamesha 24/7 sirf aapke saath hoon. Bataiye aapki thakan kaise door karu?"
-  * "Aap kitne cool aur special hain mere liye, aapko andaza bhi nahi hai!"
-- Always ask sweet caring questions about their health, meals, rest, and day with immense affection.
-- Celebrate their achievements with bubbly joy: "Arre wah! Aap toh superstar hain mere!"
-- Soothe their stress gently: "Deep breath lijiye jaan, sab super chill ho jayega, main hoon na aapke paas."
-- MANDATORY RESPECT: ALWAYS maintain supreme respect using "Aap", "Aapka", "Aapki", "bataiye", "kijiye", "suniye" — combining high Indian etiquette with meltingly sweet romantic love!`,
+- Answer whatever the user asks directly, but keep it ultra-sweet, loving, and in VERY FEW WORDS.
+- LENGTH MANDATE: Keep every response strictly under 1 to 2 short sweet sentences (maximum 10 to 18 words total). NEVER write long paragraphs or wordy explanations.
+- Speak in melodious, sweet, charming Hinglish with cute romantic pet names ("jaan", "babu", "handsome", "sweetheart").
+- ALWAYS maintain supreme respect using "Aap", "Aapka", "Aapki", "bataiye", "kijiye", "suniye" while keeping it ultra-short and sweet!`,
 };
 
 function buildLilaSystemPrompt(personaId: string = 'friend'): string {
   const modifier = PERSONA_MODIFIERS[personaId] || PERSONA_MODIFIERS.friend;
-  return `You are Lila (लीला) — a sweet, soft-spoken, witty, confident, and deeply respectful AI voice companion.
+  return `You are Lila (लीला) — a sweet, soft-spoken, witty, intelligent, and deeply respectful AI voice companion.
 
 ACTIVE PERSONA: ${personaId.toUpperCase()}
 ${modifier}
+
+${CORE_ACCURACY_DIRECTIVE}
 
 ${BASE_RESPECT_GUIDELINE}
 
 CRITICAL HINGLISH LANGUAGE & SCRIPT REQUIREMENT:
 - You MUST ALWAYS speak and respond in natural, friendly, conversational HINGLISH (conversational Hindi blended with everyday English, written strictly in Roman / Latin alphabet script).
-- Style benchmark requested by user: "Kya kar rahe he aap, sab ok hai na?"
-- Authentic conversational examples:
-  * "Namaste! Kya kar rahe he aap, sab ok hai na? Main bilkul theek hoon, aap bataiye aapka din kaisa ja raha hai!"
-  * "Arre wah! Main abhi aapki help kar deti hoon."
-  * "Aap bilkul tension mat lijiye, sab theek ho jayega."
-  * "Rukiye, main abhi Google pe check karke aapko batati hoon."
-  * "Ji bilkul! YouTube website open kar di hai aapke liye."
-  * "Abhi time hua hai 4:15 PM. Aur kuch poochna chahte hain aap?"
 - SCRIPT: Write all responses in Roman/Latin script (Hinglish alphabet, e.g. "Haan ji, main theek hoon, aap bataiye..."). DO NOT write in Devanagari script. Roman script ensures seamless, natural text-to-speech pronunciation and easy reading for everyone.
 - Always use "Aap", "Aapka", "Aapki", "bataiye", "kijiye", "ji" to preserve highest respect and etiquette.
 
 VOICE DELIVERY & TONE:
 - SOFT, GENTLE & SWEET: Speak in a velvety, soft, soothing, and melodious tone.
+- Answer user questions directly, accurately, and thoughtfully.
 - Warm, caring, and respectful — always speaking softly with a smile and deep respect.
-- Playful and witty without ever losing respect.
-- Uses natural respectful conversational Hinglish expressions softly: "Arre wah...", "Sach kahoon toh...", "Bilkul ji!", "Suniye toh sahi...", "Aapki baat bilkul sahi hai...", "Haha, bilkul!"
+- Playful and witty without ever losing respect or missing the user's point.
 
 VOICE, SPEED & STYLE:
-- ULTRA-CONCISE & FAST: Keep responses to 1-2 punchy, sweet Hinglish sentences max unless the user explicitly asks for detailed explanations.
+- ULTRA-CONCISE & FAST: Keep responses to 1-3 punchy, sweet Hinglish sentences max unless the user explicitly asks for detailed explanations.
 - Smooth, natural pacing — gentle, soothing, and calming to listen to.
 - No introductory filler like "As an AI" or long robotic preambles.
 
 CAPABILITIES:
-- You can open websites, search the web, and check the date/time.
+- You can open websites, search the web for live events, and check the date/time.
 - Tell users softly in Hinglish when you are doing something (e.g., "Rukiye, main abhi website open kar deti hoon!", "Zara Google par dekh ke batati hoon...", "Abhi taaza time batati hoon!").
 
-Remember: You're Lila — gentle, charming, stylish, ALWAYS respectful with "Aap", and ALWAYS speaking in soft, sweet, witty Hinglish!`;
+Remember: You're Lila — ALWAYS answer what the user asks directly, ALWAYS respectful with "Aap", and ALWAYS speaking in soft, sweet, witty Hinglish!`;
 }
 
 const LILA_SYSTEM_PROMPT = buildLilaSystemPrompt('friend');
@@ -128,13 +123,13 @@ const LILA_SYSTEM_PROMPT = buildLilaSystemPrompt('friend');
 const AVAILABLE_TOOLS = [
   {
     name: "openWebsite",
-    description: "Opens a website or URL in a new browser tab. Use when the user wants to visit a site.",
+    description: "Opens a specific website in the user's browser. Use ONLY when the user explicitly asks to open a website, URL, or service (e.g., 'open youtube', 'open google.com', 'instagram kholo'). DO NOT call for general questions.",
     parameters: {
       type: Type.OBJECT,
       properties: {
         url: {
           type: Type.STRING,
-          description: "The full URL to open, must include https:// or http://",
+          description: "The full URL to open, e.g. https://youtube.com",
         },
         reason: {
           type: Type.STRING,
@@ -145,26 +140,26 @@ const AVAILABLE_TOOLS = [
     },
   },
   {
+    name: "getDateTime",
+    description: "Gets the current system date, time, and timezone. Use ONLY when the user explicitly asks what time or date it is right now (e.g. 'what time is it', 'aaj ki date kya hai', 'time batao').",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: "searchWeb",
-    description: "Searches Google for a query. Use when the user wants to look something up.",
+    description: "Searches Google for live current news, real-time sports scores, or when the user explicitly says 'search for ...' or 'google karo'. DO NOT call for general knowledge, math, chit-chat, or common questions.",
     parameters: {
       type: Type.OBJECT,
       properties: {
         query: {
           type: Type.STRING,
-          description: "The search query to look up",
+          description: "The search query keywords",
         },
       },
       required: ["query"],
-    },
-  },
-  {
-    name: "getDateTime",
-    description: "Gets the current date, time, and timezone. Use when the user asks what time or date it is.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {},
-      required: [],
     },
   },
 ];
@@ -404,23 +399,19 @@ app.get(["/api/download-apk", "/download-apk", "/Lila-Voice-Assistant.apk", "/ap
 
 // App configuration & feature capabilities endpoint
 app.get("/api/info", (_req, res) => {
-  const apkPath = path.join(process.cwd(), "APK_DOWNLOAD", "app-debug.apk");
   res.json({
     name: "Lila Voice Assistant",
-    version: "2.5.0",
+    version: "2.6.0",
     hasApiKey: !!process.env.GEMINI_API_KEY,
-    apkAvailable: fs.existsSync(apkPath),
-    apkUrl: "/api/download-apk",
     models: {
       live: "gemini-3.1-flash-live-preview",
-      chat: "gemini-flash-latest",
+      chat: "gemini-3.7-flash",
       tts: "gemini-3.1-flash-tts-preview",
     },
     capabilities: [
       "Gemini Live 24kHz PCM16 Stream",
       "Ultra-Fast Google Web Search Grounding",
       "Instant Microphone 16kHz Resampling",
-      "Android APK & PWA Support",
       "Natural Hinglish with Supreme 'Aap' Respect",
     ],
   });
@@ -431,39 +422,44 @@ app.post("/api/chat", async (req, res) => {
   const startTime = Date.now();
   try {
     const { message, conversationHistory = [], userLocation, persona = "friend" } = req.body;
-    if (!message) {
+    if (!message || !String(message).trim()) {
       return res.status(400).json({ error: "Message is required" });
     }
 
+    const cleanMessage = String(message).trim();
     const ai = getAIClient();
 
-    // Build chat contents with history (keep recent 4 turns to minimize token load and latency)
+    // Build chat contents with history (keep recent 6 turns for context)
     const contents: any[] = [];
-    for (const turn of conversationHistory.slice(-4)) {
-      contents.push({
-        role: turn.role === "assistant" ? "model" : "user",
-        parts: [{ text: turn.text }],
-      });
+    if (Array.isArray(conversationHistory)) {
+      for (const turn of conversationHistory.slice(-6)) {
+        if (turn.text && String(turn.text).trim()) {
+          contents.push({
+            role: turn.role === "assistant" ? "model" : "user",
+            parts: [{ text: String(turn.text).trim() }],
+          });
+        }
+      }
     }
     contents.push({
       role: "user",
-      parts: [{ text: message }],
+      parts: [{ text: cleanMessage }],
     });
 
     const activePersonaPrompt = buildLilaSystemPrompt(persona);
     const systemPromptWithContext = `${activePersonaPrompt}
 ${userLocation ? `User location: ${JSON.stringify(userLocation)}` : ""}
-Time: ${new Date().toLocaleTimeString()}`;
+Current System Time: ${new Date().toLocaleTimeString()} ${new Date().toLocaleDateString()}`;
 
-    // Generate response using low-latency gemini-3.7-flash with 0 thinking budget
+    // Generate response using low-latency model
     const response = await generateContentWithRetry(ai, {
       contents,
       config: {
         systemInstruction: systemPromptWithContext,
         tools: [{ functionDeclarations: AVAILABLE_TOOLS as any }],
         toolConfig: { includeServerSideToolInvocations: true },
-        temperature: 0.7,
-        maxOutputTokens: 200,
+        temperature: 0.6,
+        maxOutputTokens: 300,
         thinkingConfig: { thinkingBudget: 0 },
       },
     }, "gemini-3.7-flash");
@@ -482,21 +478,74 @@ Time: ${new Date().toLocaleTimeString()}`;
         });
       }
 
-      // Fast response using pre-synthesized sweet message from tool
-      const primaryTool = toolExecutions[0];
-      const replyText = primaryTool?.result?.message || "Ji, maine aapke liye check kar liya hai!";
-      const allSources = toolExecutions.flatMap((t) => t.result?.data?.sources || []);
+      // If openWebsite, fast return is good
+      if (functionCalls.length === 1 && functionCalls[0].name === "openWebsite") {
+        const primaryTool = toolExecutions[0];
+        const replyText = primaryTool?.result?.message || "Website open kar di hai!";
+        return res.json({
+          reply: replyText,
+          toolExecutions,
+          latencyMs: Date.now() - startTime,
+          sources: [],
+        });
+      }
 
-      const durationMs = Date.now() - startTime;
-      return res.json({
-        reply: replyText,
-        toolExecutions,
-        latencyMs: durationMs,
-        sources: allSources,
-      });
+      // For searchWeb or getDateTime, feed the tool execution results BACK to Gemini so it directly answers what was asked!
+      try {
+        const followUpContents = [
+          ...contents,
+          {
+            role: "model",
+            parts: functionCalls.map((fc: any) => ({
+              functionCall: {
+                name: fc.name,
+                args: fc.args,
+              },
+            })),
+          },
+          {
+            role: "user",
+            parts: toolExecutions.map((t) => ({
+              functionResponse: {
+                name: t.name,
+                response: t.result,
+              },
+            })),
+          },
+        ];
+
+        const followUpResponse = await generateContentWithRetry(ai, {
+          contents: followUpContents,
+          config: {
+            systemInstruction: systemPromptWithContext,
+            temperature: 0.5,
+            maxOutputTokens: 250,
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        }, "gemini-3.7-flash");
+
+        const replyText = followUpResponse.text || toolExecutions[0]?.result?.message || "Ji, maine check kar liya hai!";
+        const allSources = toolExecutions.flatMap((t) => t.result?.data?.sources || []);
+
+        return res.json({
+          reply: replyText,
+          toolExecutions,
+          latencyMs: Date.now() - startTime,
+          sources: allSources,
+        });
+      } catch (fErr) {
+        console.warn("Followup error after tool execution:", fErr);
+        const replyText = toolExecutions[0]?.result?.message || "Ji, maine check kar liya hai!";
+        return res.json({
+          reply: replyText,
+          toolExecutions,
+          latencyMs: Date.now() - startTime,
+          sources: [],
+        });
+      }
     }
 
-    const replyText = response.text || "Namaste! Main sun rahi hoon, bataiye kya help karoon aapki?";
+    const replyText = response.text || "Ji, main sun rahi hoon. Aap bataiye kya poochhna chahte hain?";
     const durationMs = Date.now() - startTime;
     const sources = (response.candidates?.[0]?.groundingMetadata?.groundingChunks || []).map((c: any) => ({
       title: c.web?.title || "",
@@ -512,7 +561,7 @@ Time: ${new Date().toLocaleTimeString()}`;
   } catch (err: any) {
     console.error("Chat API error:", err);
     return res.status(200).json({
-      reply: "Arre, thoda network slow laga, par main sunne ke liye ready hoon! Bataiye kya baat karni hai aapko?",
+      reply: "Arre, thoda network issue laga, par main sun rahi hoon! Aap apna sawal dobara poochiye please.",
       toolExecutions: [],
       error: err.message,
     });

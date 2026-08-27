@@ -53,7 +53,7 @@ interface VoiceSettingsProps {
   config: VoiceSettingsConfig;
   onChangeConfig: (newConfig: Partial<VoiceSettingsConfig>) => void;
   onPreviewGreeting?: (greetingText: string) => void;
-  onOpenAndroidModal?: () => void;
+  theme?: 'light' | 'dark';
 }
 
 const PERSONA_ICONS: Record<LilaPersonaId, any> = {
@@ -71,9 +71,9 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
   config,
   onChangeConfig,
   onPreviewGreeting,
-  onOpenAndroidModal,
+  theme = 'light',
 }) => {
-  const [activeTab, setActiveTab] = useState<'persona' | 'wake_word' | 'voice' | 'engine' | 'android'>('persona');
+  const [activeTab, setActiveTab] = useState<'persona' | 'wake_word' | 'voice' | 'engine'>('persona');
   const [testWakeWordState, setTestWakeWordState] = useState<'idle' | 'testing' | 'success'>('idle');
   const [micStatus, setMicStatus] = useState<'granted' | 'prompt' | 'denied' | 'checking'>('checking');
   const [isTestingMic, setIsTestingMic] = useState(false);
@@ -81,6 +81,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
   const [micGrantedToast, setMicGrantedToast] = useState(false);
   const testMicStreamRef = useRef<MediaStream | null>(null);
   const testMicCtxRef = useRef<AudioContext | null>(null);
+  const isDark = theme === 'dark';
 
   useEffect(() => {
     if (isOpen) {
@@ -248,13 +249,21 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex border-b border-gray-100 bg-[#FAFAFA] px-4 py-2 gap-1 overflow-x-auto custom-scrollbar">
+          <div
+            className={`flex border-b px-4 py-2 gap-1 overflow-x-auto custom-scrollbar transition-colors ${
+              isDark ? 'bg-[#14161C] border-[#22252D]' : 'bg-[#FAFAFA] border-gray-100'
+            }`}
+          >
             <button
               id="tab-persona"
               onClick={() => setActiveTab('persona')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'persona'
-                  ? 'bg-black text-white shadow-xs'
+                  ? isDark
+                    ? 'bg-white text-black shadow-xs'
+                    : 'bg-black text-white shadow-xs'
+                  : isDark
+                  ? 'text-gray-400 hover:bg-white/10 hover:text-white'
                   : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
               }`}
             >
@@ -265,9 +274,13 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
             <button
               id="tab-wake-word"
               onClick={() => setActiveTab('wake_word')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'wake_word'
-                  ? 'bg-black text-white shadow-xs'
+                  ? isDark
+                    ? 'bg-white text-black shadow-xs'
+                    : 'bg-black text-white shadow-xs'
+                  : isDark
+                  ? 'text-gray-400 hover:bg-white/10 hover:text-white'
                   : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
               }`}
             >
@@ -278,9 +291,13 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
             <button
               id="tab-voice"
               onClick={() => setActiveTab('voice')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'voice'
-                  ? 'bg-black text-white shadow-xs'
+                  ? isDark
+                    ? 'bg-white text-black shadow-xs'
+                    : 'bg-black text-white shadow-xs'
+                  : isDark
+                  ? 'text-gray-400 hover:bg-white/10 hover:text-white'
                   : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
               }`}
             >
@@ -291,27 +308,18 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
             <button
               id="tab-engine"
               onClick={() => setActiveTab('engine')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'engine'
-                  ? 'bg-black text-white shadow-xs'
+                  ? isDark
+                    ? 'bg-white text-black shadow-xs'
+                    : 'bg-black text-white shadow-xs'
+                  : isDark
+                  ? 'text-gray-400 hover:bg-white/10 hover:text-white'
                   : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
               }`}
             >
               <Cpu className="w-3.5 h-3.5" />
               <span>Engine & Mode</span>
-            </button>
-
-            <button
-              id="tab-android"
-              onClick={() => setActiveTab('android')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeTab === 'android'
-                  ? 'bg-black text-white shadow-xs'
-                  : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Android App</span>
             </button>
           </div>
 
@@ -428,165 +436,33 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                     })}
                 </div>
 
-                {/* SECRET PERSONA: GIRLFRIEND (AT LAST OF PERSONA TAB) */}
-                <div className="pt-3 border-t border-gray-200/70 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-rose-600 uppercase tracking-widest flex items-center gap-1.5">
-                      <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
-                      <span>Secret Persona (सीक्रेट स्वरूप)</span>
-                    </label>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/60">
-                      Bonus Mode
-                    </span>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-50/80 via-pink-50/40 to-white border border-rose-200/80 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-rose-100 border border-rose-200/80 flex items-center justify-center text-rose-600 shrink-0">
-                          <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-xs text-rose-950">
-                              Girlfriend Persona (गर्लफ्रेंड)
-                            </span>
-                            <span className="text-[9px] px-2 py-0.2 rounded-full bg-rose-100 text-rose-800 border border-rose-200 font-semibold">
-                              Special
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-rose-800/80 font-light">
-                            Romantic, sweet & caring Hinglish voice companion with deep affection.
-                          </p>
-                        </div>
+                {/* If girlfriend persona is currently active, show a discreet status to switch back */}
+                {config.persona === 'girlfriend' && (
+                  <div
+                    className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs shadow-xs ${
+                      isDark
+                        ? 'bg-rose-950/40 border-rose-800/80 text-rose-200'
+                        : 'bg-rose-50 border-rose-200 text-rose-950'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Heart className="w-4 h-4 fill-rose-500 text-rose-500 shrink-0" />
+                      <div>
+                        <span className="font-semibold block">Girlfriend Mode Active</span>
+                        <span className="text-[11px] opacity-80 font-light">
+                          Romantic, ultra-sweet Hinglish with minimal words.
+                        </span>
                       </div>
-
-                      {/* Enable / Disable Secret Switch */}
-                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                        <input
-                          id="secret-girlfriend-toggle"
-                          type="checkbox"
-                          checked={!!config.secretGirlfriendEnabled}
-                          onChange={(e) => {
-                            const isEnabled = e.target.checked;
-                            if (!isEnabled && config.persona === 'girlfriend') {
-                              onChangeConfig({
-                                secretGirlfriendEnabled: false,
-                                persona: 'friend',
-                              });
-                            } else {
-                              onChangeConfig({ secretGirlfriendEnabled: isEnabled });
-                            }
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-10 h-5.5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-rose-500"></div>
-                      </label>
                     </div>
-
-                    {/* Interactive Girlfriend Option if Enabled */}
-                    {config.secretGirlfriendEnabled ? (
-                      <div className="pt-2 border-t border-rose-200/60">
-                        {(() => {
-                          const p = LILA_PERSONAS.girlfriend;
-                          const isSelected = config.persona === 'girlfriend';
-
-                          return (
-                            <div
-                              id="persona-option-girlfriend"
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => onChangeConfig({ persona: 'girlfriend' })}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  onChangeConfig({ persona: 'girlfriend' });
-                                }
-                              }}
-                              className={`w-full p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer select-none ${
-                                isSelected
-                                  ? 'bg-white border-rose-500 text-rose-950 ring-2 ring-rose-300 shadow-sm'
-                                  : 'bg-white/80 border-rose-200 text-gray-700 hover:bg-white hover:border-rose-300'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-2 mb-1.5">
-                                <div className="flex items-center gap-2.5">
-                                  <div
-                                    className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                                      isSelected
-                                        ? 'bg-rose-500 text-white'
-                                        : 'bg-rose-100 text-rose-600'
-                                    }`}
-                                  >
-                                    <Heart className="w-3.5 h-3.5 fill-current" />
-                                  </div>
-                                  <div>
-                                    <div className="font-semibold text-xs flex items-center gap-2">
-                                      <span>{p.name}</span>
-                                      <span
-                                        className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
-                                          isSelected
-                                            ? 'bg-rose-600 text-white border-rose-600'
-                                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                                        }`}
-                                      >
-                                        {p.tag}
-                                      </span>
-                                    </div>
-                                    <div className="text-[11px] text-rose-800 font-medium">
-                                      {p.hindiName}
-                                    </div>
-                                  </div>
-                                </div>
-                                {isSelected ? (
-                                  <span className="flex items-center gap-1 text-[11px] text-rose-700 font-semibold">
-                                    <Check className="w-4 h-4 text-rose-600" />
-                                    <span>Active</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 font-medium">
-                                    Click to Activate
-                                  </span>
-                                )}
-                              </div>
-
-                              <p className="text-[11px] text-rose-900/80 leading-relaxed font-light pl-9.5">
-                                {p.hindiDescription}
-                              </p>
-
-                              {/* Sample Greeting Preview */}
-                              <div className="mt-2.5 pt-2 border-t border-rose-100 flex items-center justify-between text-[11px] pl-9.5">
-                                <span className="text-rose-700/80 italic truncate max-w-[320px]">
-                                  "{p.sampleGreeting}"
-                                </span>
-                                {onPreviewGreeting && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onChangeConfig({ persona: 'girlfriend' });
-                                      onPreviewGreeting(p.sampleGreeting);
-                                    }}
-                                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-800 hover:text-rose-950 px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 transition-colors shrink-0 ml-2 cursor-pointer"
-                                    title="Listen to sample greeting"
-                                  >
-                                    <Play className="w-2.5 h-2.5 fill-rose-700 text-rose-700" />
-                                    <span>Listen</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-[11px] text-rose-700/70 pt-1 font-light italic">
-                        <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                        <span>Secret Girlfriend persona is disabled. Flip the switch above to enable.</span>
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => onChangeConfig({ persona: 'friend' })}
+                      className="px-3 py-1.5 rounded-full text-xs font-semibold bg-black text-white hover:bg-neutral-800 shadow-xs transition-colors shrink-0 cursor-pointer"
+                    >
+                      Switch to Friend
+                    </button>
                   </div>
-                </div>
+                )}
               </div>
             )}
 
@@ -1092,82 +968,25 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
                     </div>
 
                     {/* Sound Effects */}
-                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-gray-200 shadow-sm">
+                    <div
+                      className={`flex items-center justify-between p-3.5 rounded-2xl border shadow-xs ${
+                        isDark ? 'bg-[#181A20] border-[#2B2F3A]' : 'bg-white border-gray-200'
+                      }`}
+                    >
                       <div className="space-y-0.5">
-                        <span className="font-medium text-xs text-[#1D1D1F] block">UI Sound Cues</span>
-                        <span className="text-[11px] text-gray-500 font-light block">
-                          Play subtle audio chimes on session connect, tools, and disconnect
+                        <span className={`font-medium text-xs block ${isDark ? 'text-white' : 'text-[#1D1D1F]'}`}>
+                          UI Sound Cues
+                        </span>
+                        <span className={`text-[11px] font-light block ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          Play subtle audio chimes on session connect, tools, and wake word
                         </span>
                       </div>
                       <input
                         type="checkbox"
                         checked={config.soundEffects}
                         onChange={(e) => onChangeConfig({ soundEffects: e.target.checked })}
-                        className="w-4 h-4 accent-black rounded cursor-pointer"
+                        className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
                       />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 5: ANDROID APP & PWA */}
-            {activeTab === 'android' && (
-              <div className="space-y-5">
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-neutral-900 to-black text-white space-y-3 shadow-md">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-emerald-400">
-                      <Smartphone className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-sm">Lila Android Application</h4>
-                      <p className="text-xs text-gray-300 font-light">Install native APK or run as fullscreen Android PWA</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex flex-col sm:flex-row gap-2">
-                    <a
-                      href="/api/download-apk"
-                      download="Lila-Voice-Assistant.apk"
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-white text-black font-semibold text-xs text-center hover:bg-gray-100 transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
-                    >
-                      <Download className="w-4 h-4 text-emerald-600" />
-                      <span>Download Android APK (.apk)</span>
-                    </a>
-                    {onOpenAndroidModal && (
-                      <button
-                        onClick={onOpenAndroidModal}
-                        className="py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Globe className="w-4 h-4 text-sky-400" />
-                        <span>Install PWA Guide</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-2.5">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">
-                    Android Optimization Features
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div className="p-2.5 rounded-xl bg-[#FAFAFA] border border-gray-100 space-y-1">
-                      <span className="font-semibold text-black flex items-center gap-1.5">
-                        <Mic className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Resampled 16kHz Audio</span>
-                      </span>
-                      <p className="text-[11px] text-gray-500 font-light">
-                        Automatic software resampling from 48kHz/44.1kHz down to 16kHz for seamless compatibility with all Android chipsets.
-                      </p>
-                    </div>
-                    <div className="p-2.5 rounded-xl bg-[#FAFAFA] border border-gray-100 space-y-1">
-                      <span className="font-semibold text-black flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-pink-600" />
-                        <span>2-Sentence Fast Search</span>
-                      </span>
-                      <p className="text-[11px] text-gray-500 font-light">
-                        Google Grounding with 0 thinking budget and memory caching for ultra-snappy web lookups.
-                      </p>
                     </div>
                   </div>
                 </div>
@@ -1176,11 +995,19 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-gray-100 flex justify-end bg-white">
+          <div
+            className={`p-4 border-t flex justify-end transition-colors ${
+              isDark ? 'bg-[#14161C] border-[#22252D]' : 'bg-white border-gray-100'
+            }`}
+          >
             <button
               id="lila-done-settings-btn"
               onClick={onClose}
-              className="px-6 py-2 rounded-full bg-black text-white text-xs font-semibold hover:bg-neutral-800 shadow-sm transition-all"
+              className={`px-6 py-2 rounded-full text-xs font-semibold shadow-sm transition-all cursor-pointer ${
+                isDark
+                  ? 'bg-white text-black hover:bg-gray-200'
+                  : 'bg-black text-white hover:bg-neutral-800'
+              }`}
             >
               Done
             </button>

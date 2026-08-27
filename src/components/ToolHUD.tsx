@@ -6,10 +6,12 @@ import { ToolCallEvent } from '../types';
 interface ToolHUDProps {
   activeTools: ToolCallEvent[];
   onDismiss: (id: string) => void;
+  theme?: 'light' | 'dark';
 }
 
-export const ToolHUD: React.FC<ToolHUDProps> = ({ activeTools, onDismiss }) => {
+export const ToolHUD: React.FC<ToolHUDProps> = ({ activeTools, onDismiss, theme = 'light' }) => {
   if (activeTools.length === 0) return null;
+  const isDark = theme === 'dark';
 
   return (
     <div id="lila-tool-hud-container" className="w-full max-w-lg mx-auto px-4 mb-4 space-y-2.5">
@@ -25,15 +27,23 @@ export const ToolHUD: React.FC<ToolHUDProps> = ({ activeTools, onDismiss }) => {
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.96 }}
-              className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-[0_4px_24px_rgba(0,0,0,0.03)] text-[#1D1D1F]"
+              className={`relative overflow-hidden rounded-2xl border p-4 shadow-[0_4px_24px_rgba(0,0,0,0.03)] transition-colors ${
+                isDark
+                  ? 'bg-[#181A20] border-[#2B2F3A] text-white shadow-[0_4px_24px_rgba(0,0,0,0.4)]'
+                  : 'bg-white border-gray-200 text-[#1D1D1F]'
+              }`}
             >
               {/* Header row */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
-                    {isOpenWeb && <ExternalLink className="w-4 h-4 text-gray-700" />}
-                    {isSearch && <Search className="w-4 h-4 text-gray-700" />}
-                    {isClock && <Clock className="w-4 h-4 text-gray-700" />}
+                  <div
+                    className={`w-8 h-8 rounded-full border flex items-center justify-center shrink-0 ${
+                      isDark ? 'bg-[#12141A] border-[#2B2F3A]' : 'bg-gray-50 border-gray-100'
+                    }`}
+                  >
+                    {isOpenWeb && <ExternalLink className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} />}
+                    {isSearch && <Search className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} />}
+                    {isClock && <Clock className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} />}
                   </div>
 
                   <div>
@@ -46,10 +56,10 @@ export const ToolHUD: React.FC<ToolHUDProps> = ({ activeTools, onDismiss }) => {
                           : 'Clock & Time'}
                       </span>
                       {tool.status === 'completed' && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                       )}
                     </div>
-                    <p className="text-xs sm:text-sm font-medium text-[#1D1D1F]">
+                    <p className={`text-xs sm:text-sm font-medium ${isDark ? 'text-white' : 'text-[#1D1D1F]'}`}>
                       {isOpenWeb
                         ? tool.args.url
                         : isSearch
@@ -61,7 +71,9 @@ export const ToolHUD: React.FC<ToolHUDProps> = ({ activeTools, onDismiss }) => {
 
                 <button
                   onClick={() => onDismiss(tool.id)}
-                  className="p-1 rounded-full text-gray-400 hover:text-black hover:bg-gray-100 transition-colors"
+                  className={`p-1 rounded-full transition-colors cursor-pointer ${
+                    isDark ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-400 hover:text-black hover:bg-gray-100'
+                  }`}
                   title="Dismiss"
                 >
                   <X className="w-4 h-4" />
@@ -70,7 +82,11 @@ export const ToolHUD: React.FC<ToolHUDProps> = ({ activeTools, onDismiss }) => {
 
               {/* Body / Result Preview */}
               {tool.result && (
-                <div className="mt-3 pt-2.5 border-t border-gray-100 text-xs text-gray-600 space-y-2">
+                <div
+                  className={`mt-3 pt-2.5 border-t text-xs space-y-2 ${
+                    isDark ? 'border-white/10 text-gray-300' : 'border-gray-100 text-gray-600'
+                  }`}
+                >
                   <p className="leading-relaxed">{tool.result.message}</p>
 
                   {/* If Website Open */}
@@ -80,7 +96,11 @@ export const ToolHUD: React.FC<ToolHUDProps> = ({ activeTools, onDismiss }) => {
                         href={tool.result.data.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black text-white text-xs font-medium hover:bg-neutral-800 transition-colors shadow-sm"
+                        className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors shadow-sm ${
+                          isDark
+                            ? 'bg-white text-black hover:bg-gray-200'
+                            : 'bg-black text-white hover:bg-neutral-800'
+                        }`}
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span>Visit {new URL(tool.result.data.url).hostname}</span>
@@ -101,7 +121,11 @@ export const ToolHUD: React.FC<ToolHUDProps> = ({ activeTools, onDismiss }) => {
                             href={src.uri}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-50 hover:bg-gray-100 text-[11px] text-gray-700 border border-gray-200 truncate max-w-xs transition-colors"
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] border truncate max-w-xs transition-colors ${
+                              isDark
+                                ? 'bg-white/10 hover:bg-white/20 text-gray-200 border-white/15'
+                                : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200'
+                            }`}
                           >
                             <span className="truncate">{src.title || src.uri}</span>
                             <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />
@@ -113,9 +137,13 @@ export const ToolHUD: React.FC<ToolHUDProps> = ({ activeTools, onDismiss }) => {
 
                   {/* If Date/Time result */}
                   {isClock && tool.result.data && (
-                    <div className="flex items-center gap-3 pt-1 text-gray-800 font-mono text-xs">
+                    <div
+                      className={`flex items-center gap-3 pt-1 font-mono text-xs ${
+                        isDark ? 'text-gray-200' : 'text-gray-800'
+                      }`}
+                    >
                       <span className="font-semibold">{tool.result.data.time}</span>
-                      <span className="text-gray-300">•</span>
+                      <span className={isDark ? 'text-gray-600' : 'text-gray-300'}>•</span>
                       <span>{tool.result.data.date}</span>
                     </div>
                   )}

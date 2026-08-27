@@ -15,6 +15,7 @@ interface VoiceOrbProps {
   wakeWordEnabled?: boolean;
   wakeWordLabel?: string;
   isWakeWordDetected?: boolean;
+  theme?: 'light' | 'dark';
 }
 
 export const VoiceOrb: React.FC<VoiceOrbProps> = ({
@@ -29,8 +30,10 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
   wakeWordEnabled = true,
   wakeWordLabel = 'Hey Lila',
   isWakeWordDetected = false,
+  theme = 'light',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDark = theme === 'dark';
 
   // Dynamic particle & waveform canvas visualizer adapted for Clean Minimalism light canvas
   useEffect(() => {
@@ -84,18 +87,22 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
         }
         ctx.closePath();
 
-        // Dynamic gradients based on Lila's state (refined for light background #FAFAFA)
+        // Dynamic gradients based on Lila's state
         if (voiceState === 'speaking') {
-          ctx.strokeStyle = `rgba(29, 29, 31, ${Math.max(0.1, (0.45 - r * 0.1) * (currentLevel + 0.3))})`;
+          ctx.strokeStyle = isDark
+            ? `rgba(255, 255, 255, ${Math.max(0.12, (0.55 - r * 0.1) * (currentLevel + 0.3))})`
+            : `rgba(29, 29, 31, ${Math.max(0.1, (0.45 - r * 0.1) * (currentLevel + 0.3))})`;
           ctx.lineWidth = 1.5 + r * 0.3;
         } else if (voiceState === 'listening') {
-          ctx.strokeStyle = `rgba(29, 29, 31, ${Math.max(0.08, (0.4 - r * 0.09) * (currentLevel + 0.3))})`;
+          ctx.strokeStyle = isDark
+            ? `rgba(52, 211, 153, ${Math.max(0.1, (0.45 - r * 0.09) * (currentLevel + 0.3))})`
+            : `rgba(29, 29, 31, ${Math.max(0.08, (0.4 - r * 0.09) * (currentLevel + 0.3))})`;
           ctx.lineWidth = 1.5;
         } else if (voiceState === 'thinking') {
-          ctx.strokeStyle = `rgba(0, 0, 0, ${0.25 - r * 0.08})`;
+          ctx.strokeStyle = isDark ? `rgba(255, 255, 255, ${0.35 - r * 0.08})` : `rgba(0, 0, 0, ${0.25 - r * 0.08})`;
           ctx.lineWidth = 1.2;
         } else {
-          ctx.strokeStyle = `rgba(0, 0, 0, 0.05)`;
+          ctx.strokeStyle = isDark ? `rgba(255, 255, 255, 0.06)` : `rgba(0, 0, 0, 0.05)`;
           ctx.lineWidth = 1;
         }
         ctx.stroke();
@@ -109,7 +116,7 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [voiceState, audioLevel, micLevel]);
+  }, [voiceState, audioLevel, micLevel, isDark]);
 
   // Status text & color styling (Clean Minimalism style)
   const getStatusBadge = () => {
@@ -117,46 +124,60 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
       case 'connecting':
         return {
           text: 'Connecting to Lila...',
-          color: 'bg-white text-gray-700 border-gray-200 shadow-sm',
+          color: isDark
+            ? 'bg-[#181A20] text-gray-300 border-[#2B2F3A] shadow-sm'
+            : 'bg-white text-gray-700 border-gray-200 shadow-sm',
           dot: 'bg-amber-500 animate-ping',
         };
       case 'listening':
         return {
           text: isMuted ? 'Microphone Muted' : 'Lila is listening (Hindi Voice)...',
-          color: 'bg-white text-gray-800 border-gray-200 shadow-sm',
-          dot: 'bg-black animate-pulse',
+          color: isDark
+            ? 'bg-[#181A20] text-white border-[#2B2F3A] shadow-sm'
+            : 'bg-white text-gray-800 border-gray-200 shadow-sm',
+          dot: isDark ? 'bg-emerald-400 animate-pulse' : 'bg-black animate-pulse',
         };
       case 'thinking':
         return {
           text: 'Lila is thinking...',
-          color: 'bg-white text-gray-800 border-gray-200 shadow-sm',
-          dot: 'bg-black animate-spin',
+          color: isDark
+            ? 'bg-[#181A20] text-white border-[#2B2F3A] shadow-sm'
+            : 'bg-white text-gray-800 border-gray-200 shadow-sm',
+          dot: isDark ? 'bg-white animate-spin' : 'bg-black animate-spin',
         };
       case 'speaking':
         return {
           text: 'Lila is speaking — Tap orb to interrupt',
-          color: 'bg-white text-gray-900 border-gray-300 shadow-sm font-semibold',
-          dot: 'bg-black animate-pulse',
+          color: isDark
+            ? 'bg-[#181A20] text-white border-white/20 shadow-sm font-semibold'
+            : 'bg-white text-gray-900 border-gray-300 shadow-sm font-semibold',
+          dot: isDark ? 'bg-pink-400 animate-pulse' : 'bg-black animate-pulse',
         };
       case 'disconnected':
       default:
         if (isWakeWordDetected) {
           return {
             text: 'Wake Word Detected! Activating...',
-            color: 'bg-emerald-50 text-emerald-900 border-emerald-300 shadow-sm font-semibold animate-pulse',
-            dot: 'bg-emerald-600 animate-ping',
+            color: isDark
+              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700 shadow-sm font-semibold animate-pulse'
+              : 'bg-emerald-50 text-emerald-900 border-emerald-300 shadow-sm font-semibold animate-pulse',
+            dot: 'bg-emerald-500 animate-ping',
           };
         }
         if (wakeWordEnabled) {
           return {
             text: `Say "${wakeWordLabel}" or tap to talk`,
-            color: 'bg-white text-gray-700 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.02)]',
+            color: isDark
+              ? 'bg-[#181A20] text-gray-300 border-[#2B2F3A] shadow-sm'
+              : 'bg-white text-gray-700 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.02)]',
             dot: 'bg-emerald-500 animate-pulse',
           };
         }
         return {
           text: 'Tap orb to start voice conversation',
-          color: 'bg-white text-gray-600 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.02)]',
+          color: isDark
+            ? 'bg-[#181A20] text-gray-400 border-[#2B2F3A] shadow-sm'
+            : 'bg-white text-gray-600 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.02)]',
           dot: 'bg-gray-400',
         };
     }
@@ -202,7 +223,15 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
             ease: 'easeInOut',
           }}
           className={`absolute w-44 h-44 sm:w-52 sm:h-52 rounded-full filter blur-2xl pointer-events-none z-0 transition-colors duration-700 ${
-            voiceState === 'speaking'
+            isDark
+              ? voiceState === 'speaking'
+                ? 'bg-indigo-500/25'
+                : voiceState === 'listening'
+                ? 'bg-emerald-500/25'
+                : voiceState === 'thinking'
+                ? 'bg-violet-500/25'
+                : 'bg-white/10'
+              : voiceState === 'speaking'
               ? 'bg-neutral-400/30'
               : voiceState === 'listening'
               ? 'bg-neutral-300/40'
@@ -215,8 +244,8 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
         {/* Main Central Interactive Minimalist Orb */}
         <motion.button
           id="lila-interactive-orb-btn"
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => {
             if (voiceState === 'speaking' || voiceState === 'thinking') {
               onInterrupt();
@@ -225,9 +254,9 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
             }
           }}
           className={`relative z-10 w-32 h-32 sm:w-40 sm:h-40 rounded-full flex flex-col items-center justify-center p-4 cursor-pointer transition-all duration-300 shadow-[0_8px_30px_rgba(0,0,0,0.06)] border ${
-            voiceState === 'speaking'
-              ? 'bg-black text-white border-black shadow-[0_12px_40px_rgba(0,0,0,0.18)] ring-4 ring-black/10'
-              : voiceState === 'listening'
+            isDark
+              ? 'bg-gradient-to-b from-[#1C1F28] via-[#14161C] to-[#0A0B0E] text-white border-white/20 hover:border-white/40 shadow-[0_12px_40px_rgba(0,0,0,0.6)]'
+              : voiceState === 'speaking' || voiceState === 'listening'
               ? 'bg-black text-white border-black shadow-[0_12px_40px_rgba(0,0,0,0.18)] ring-4 ring-black/10'
               : voiceState === 'thinking'
               ? 'bg-neutral-900 text-white border-neutral-900 shadow-[0_12px_40px_rgba(0,0,0,0.15)] ring-4 ring-neutral-900/10'
@@ -352,9 +381,11 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
           <button
             id="lila-mute-mic-btn"
             onClick={onToggleMute}
-            className={`p-2.5 rounded-full border transition-all ${
+            className={`p-2.5 rounded-full border transition-all cursor-pointer ${
               isMuted
-                ? 'bg-rose-50 text-rose-600 border-rose-200'
+                ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+                : isDark
+                ? 'bg-[#181A20] text-gray-300 border-[#2B2F3A] hover:bg-white/10 shadow-sm'
                 : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50 shadow-sm'
             }`}
             title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
@@ -367,7 +398,11 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
             <button
               id="lila-interrupt-btn"
               onClick={onInterrupt}
-              className="px-4 py-2 rounded-full bg-white text-black border border-gray-300 text-xs font-medium hover:bg-gray-50 transition-all flex items-center gap-1.5 shadow-sm"
+              className={`px-4 py-2 rounded-full border text-xs font-medium transition-all flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                isDark
+                  ? 'bg-white text-black border-white hover:bg-gray-200'
+                  : 'bg-white text-black border-gray-300 hover:bg-gray-50'
+              }`}
             >
               <Volume2 className="w-3.5 h-3.5" />
               <span>Interrupt</span>
@@ -378,7 +413,11 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
           <button
             id="lila-disconnect-session-btn"
             onClick={onToggleConnect}
-            className="px-4 py-2 rounded-full bg-white text-gray-600 border border-gray-200 text-xs font-medium hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm"
+            className={`px-4 py-2 rounded-full border text-xs font-medium transition-all shadow-sm cursor-pointer ${
+              isDark
+                ? 'bg-[#181A20] text-gray-300 border-[#2B2F3A] hover:bg-rose-950/50 hover:text-rose-300 hover:border-rose-800'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200'
+            }`}
           >
             End Session
           </button>

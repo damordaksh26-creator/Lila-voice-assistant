@@ -6,6 +6,8 @@ export type LilaPersonaId = 'friend' | 'family' | 'counselor' | 'assistant' | 'm
 
 export type WakeWordOption = 'hey_lila' | 'ok_lila' | 'suno_lila' | 'namaste_lila' | 'any';
 
+export type ThemeMode = 'light' | 'dark';
+
 export interface LilaPersona {
   id: LilaPersonaId;
   name: string;
@@ -59,7 +61,7 @@ export interface VoiceSettingsConfig {
   soundEffects: boolean;
   showSubtitles: boolean;
   connectionMode: 'live_websocket' | 'turn_based';
-  secretGirlfriendEnabled?: boolean;
+  secretGirlfriendUnlocked?: boolean;
   alwaysAllowMic: boolean;
 }
 
