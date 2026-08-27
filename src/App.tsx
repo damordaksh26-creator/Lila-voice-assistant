@@ -54,17 +54,17 @@ const PERSONA_QUICK_ICONS: Record<LilaPersonaId, any> = {
 
 const DEFAULT_SETTINGS: VoiceSettingsConfig = {
   voice: LILA_IDENTITY.defaultVoice,
-  pitch: LILA_ACOUSTIC_PRESETS.speechSynthesisPitch,
+  pitch: 1.10, // Default pitch 1.1x (Sweet Young Girl)
   persona: LILA_IDENTITY.defaultPersona,
   wakeWordEnabled: true,
   wakeWord: LILA_IDENTITY.defaultWakeWord,
   wakeWordChime: true,
-  alwaysAllowMic: true,
+  alwaysAllowMic: true, // Permanent Mic Access enabled by default
   continuousMode: true,
   soundEffects: true,
   showSubtitles: true,
   connectionMode: 'live_websocket',
-  secretGirlfriendEnabled: false,
+  secretGirlfriendEnabled: true, // Girlfriend mode enabled
 };
 
 const loadInitialSettings = (): VoiceSettingsConfig => {
@@ -72,7 +72,12 @@ const loadInitialSettings = (): VoiceSettingsConfig => {
     const saved = localStorage.getItem('lila_settings_v2');
     if (saved) {
       const parsed = JSON.parse(saved);
-      return { ...DEFAULT_SETTINGS, ...parsed };
+      // Migrate old pitch 1.0 or 1.06 to 1.10 default if not customized
+      const pitch =
+        parsed.pitch === undefined || parsed.pitch === 1.0 || parsed.pitch === 1.06
+          ? 1.10
+          : parsed.pitch;
+      return { ...DEFAULT_SETTINGS, ...parsed, pitch, alwaysAllowMic: true, secretGirlfriendEnabled: true };
     }
   } catch (e) {
     // fallback
@@ -145,13 +150,30 @@ export default function App() {
   const voiceStateRef = useRef<VoiceState>('disconnected');
   const settingsRef = useRef<VoiceSettingsConfig>(settings);
   const isMutedRef = useRef(isMuted);
+  const startSpeechRecognitionRef = useRef<() => void>(() => {});
+  const handleTurnBasedMessageRef = useRef<(text: string) => void>(() => {});
+  const speakWithBrowserSpeechRef = useRef<(text: string, onEnd?: () => void) => void>(() => {});
 
   // Wake Word Standby Recognizer Ref
   const wakeWordRecognitionRef = useRef<any>(null);
 
-  // Keep refs synchronized
+  // Keep refs synchronized and enforce absolute safety against stuck states
   useEffect(() => {
     voiceStateRef.current = voiceState;
+    if (voiceState === 'thinking') {
+      // 2.5s absolute watchdog: thinking state can never hang permanently
+      const safetyTimer = setTimeout(() => {
+        if (voiceStateRef.current === 'thinking') {
+          console.warn('Thinking safety recovery: restoring conversation listening mode');
+          setVoiceState('listening');
+          micRecorderRef.current?.resumeStreaming();
+          if (settingsRef.current.connectionMode === 'turn_based') {
+            startSpeechRecognitionRef.current();
+          }
+        }
+      }, 2500);
+      return () => clearTimeout(safetyTimer);
+    }
   }, [voiceState]);
 
   useEffect(() => {
@@ -166,17 +188,13 @@ export default function App() {
   useEffect(() => {
     const player = new AudioQueuePlayer(24000);
     player.setOnQueueEnd(() => {
-      if (voiceStateRef.current === 'speaking') {
-        if (settingsRef.current.continuousMode && wsRef.current?.readyState === WebSocket.OPEN) {
-          setVoiceState('listening');
-        } else if (
-          settingsRef.current.continuousMode &&
-          settingsRef.current.connectionMode === 'turn_based'
-        ) {
-          setVoiceState('listening');
-          startSpeechRecognition();
-        } else {
-          setVoiceState('listening');
+      if (voiceStateRef.current === 'speaking' || voiceStateRef.current === 'thinking') {
+        setVoiceState('listening');
+        if (micRecorderRef.current) {
+          micRecorderRef.current.resumeStreaming();
+        }
+        if (settingsRef.current.connectionMode === 'turn_based') {
+          startSpeechRecognitionRef.current();
         }
       }
     });
@@ -248,7 +266,7 @@ export default function App() {
     []
   );
 
-  // Stop / Interrupt Lila's speech
+  // Stop / Interrupt Lila's speech or thinking
   const handleInterrupt = useCallback(() => {
     if (audioQueueRef.current) {
       audioQueueRef.current.stop();
@@ -260,6 +278,12 @@ export default function App() {
       wsRef.current.send(JSON.stringify({ type: 'interrupt' }));
     }
     setVoiceState('listening');
+    if (micRecorderRef.current) {
+      micRecorderRef.current.resumeStreaming();
+    }
+    if (settingsRef.current.connectionMode === 'turn_based') {
+      startSpeechRecognitionRef.current();
+    }
   }, []);
 
   // Web Speech Recognition for Turn-Based Conversation
@@ -318,7 +342,7 @@ export default function App() {
             } catch (e) {
               // ignore
             }
-            handleTurnBasedMessage(captured);
+            handleTurnBasedMessageRef.current(captured);
           }
         }, 450);
       }
@@ -355,6 +379,10 @@ export default function App() {
       console.warn('Recognition start exception:', e);
     }
   }, []);
+
+  useEffect(() => {
+    startSpeechRecognitionRef.current = startSpeechRecognition;
+  }, [startSpeechRecognition]);
 
   // Helper for immediate browser synthesis fallback (strictly respectful in Hinglish)
   const speakWithBrowserSpeech = useCallback(
@@ -402,22 +430,40 @@ export default function App() {
 
         setVoiceState('speaking');
         utterance.onend = () => {
+          setVoiceState('listening');
+          micRecorderRef.current?.resumeStreaming();
           if (onEndCallback) {
             onEndCallback();
-          } else if (settingsRef.current.continuousMode) {
-            setVoiceState('listening');
-            startSpeechRecognition();
-          } else {
-            setVoiceState('listening');
+          }
+          if (settingsRef.current.connectionMode === 'turn_based') {
+            startSpeechRecognitionRef.current();
+          }
+        };
+        utterance.onerror = () => {
+          setVoiceState('listening');
+          micRecorderRef.current?.resumeStreaming();
+          if (onEndCallback) {
+            onEndCallback();
+          }
+          if (settingsRef.current.connectionMode === 'turn_based') {
+            startSpeechRecognitionRef.current();
           }
         };
         window.speechSynthesis.speak(utterance);
       } catch (e) {
         setVoiceState('listening');
+        micRecorderRef.current?.resumeStreaming();
+        if (settingsRef.current.connectionMode === 'turn_based') {
+          startSpeechRecognitionRef.current();
+        }
       }
     },
-    [startSpeechRecognition]
+    []
   );
+
+  useEffect(() => {
+    speakWithBrowserSpeechRef.current = speakWithBrowserSpeech;
+  }, [speakWithBrowserSpeech]);
 
   // Turn-Based Conversation Engine (Fast Chat + Persona Injection + Pipelined TTS)
   const handleTurnBasedMessage = async (userText: string) => {
@@ -536,6 +582,10 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    handleTurnBasedMessageRef.current = handleTurnBasedMessage;
+  });
+
   // Replay speech for past transcript
   const replayAudioMessage = async (text: string) => {
     if (!text.trim()) return;
@@ -580,18 +630,35 @@ export default function App() {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
-      const recorder = new MicRecorder((base64Chunk) => {
-        if (
-          ws.readyState === WebSocket.OPEN &&
-          voiceStateRef.current === 'listening' &&
-          !isMutedRef.current
-        ) {
-          ws.send(JSON.stringify({ type: 'audio', audio: base64Chunk }));
+      let recorder = micRecorderRef.current;
+      if (!recorder) {
+        recorder = new MicRecorder((base64Chunk) => {
+          if (
+            wsRef.current?.readyState === WebSocket.OPEN &&
+            voiceStateRef.current === 'listening' &&
+            !isMutedRef.current
+          ) {
+            wsRef.current.send(JSON.stringify({ type: 'audio', audio: base64Chunk }));
+          }
+        }, settingsRef.current.alwaysAllowMic);
+        micRecorderRef.current = recorder;
+
+        const micStarted = await recorder.start();
+        if (!micStarted) {
+          setMicPermissionDenied(true);
+          setSettings((prev) => ({ ...prev, connectionMode: 'turn_based' }));
+          setVoiceState('listening');
+        } else {
+          setMicPermissionDenied(false);
+          setMicPermissionStatus('granted');
         }
-      });
+      } else {
+        recorder.resumeStreaming();
+      }
 
       ws.onopen = () => {
         setVoiceState('listening');
+        micRecorderRef.current?.resumeStreaming();
         if (initialSpokenPrompt && initialSpokenPrompt.trim()) {
           addTranscript('user', initialSpokenPrompt);
           setLiveSubtitle({ role: 'user', text: initialSpokenPrompt });
@@ -606,8 +673,10 @@ export default function App() {
 
           if (data.type === 'socket_ready' || data.type === 'ready' || data.type === 'connected') {
             setVoiceState('listening');
+            micRecorderRef.current?.resumeStreaming();
           } else if (data.type === 'audio' && data.data) {
             setVoiceState('speaking');
+            micRecorderRef.current?.pauseStreaming();
             if (audioQueueRef.current) {
               audioQueueRef.current.playPcm16Chunk(data.data);
             }
@@ -621,6 +690,7 @@ export default function App() {
             }
           } else if (data.type === 'interrupted') {
             handleInterrupt();
+            micRecorderRef.current?.resumeStreaming();
           } else if (data.type === 'tool_start') {
             setVoiceState('thinking');
             const newTool: ToolCallEvent = {
@@ -648,6 +718,28 @@ export default function App() {
                 console.warn('Popup blocked, URL in HUD');
               }
             }
+
+            // Fast Safety Watchdog: If audio stream does not start within 1000ms after tool completion,
+            // immediately speak the result summary and reopen conversation mode (listening)
+            const resultMsg = data.result?.message;
+            setTimeout(() => {
+              if (voiceStateRef.current === 'thinking') {
+                if (resultMsg && typeof resultMsg === 'string' && resultMsg.length > 0) {
+                  speakWithBrowserSpeech(resultMsg, () => {
+                    setVoiceState('listening');
+                    micRecorderRef.current?.resumeStreaming();
+                  });
+                } else {
+                  setVoiceState('listening');
+                  micRecorderRef.current?.resumeStreaming();
+                }
+              }
+            }, 1000);
+          } else if (data.type === 'turn_complete') {
+            if (voiceStateRef.current === 'thinking') {
+              setVoiceState('listening');
+              micRecorderRef.current?.resumeStreaming();
+            }
           } else if (data.type === 'live_unavailable') {
             console.warn('Gemini Live fallback to Turn-Based mode:', data.message);
             setSettings((prev) => ({ ...prev, connectionMode: 'turn_based' }));
@@ -674,17 +766,6 @@ export default function App() {
           disconnectSession();
         }
       };
-
-      recorder.start().then((micStarted) => {
-        if (!micStarted) {
-          setMicPermissionDenied(true);
-          setSettings((prev) => ({ ...prev, connectionMode: 'turn_based' }));
-          setVoiceState('listening');
-        } else {
-          setMicPermissionDenied(false);
-          micRecorderRef.current = recorder;
-        }
-      });
     } catch (err: any) {
       console.error('Failed to connect:', err);
       setErrorMessage(err.message || 'Could not start voice session.');
@@ -693,7 +774,7 @@ export default function App() {
   };
 
   // Disconnect voice session
-  const disconnectSession = useCallback(() => {
+  const disconnectSession = useCallback((forceCloseMic: boolean = false) => {
     if (settings.soundEffects && voiceStateRef.current !== 'disconnected') {
       playSoundCue('disconnect');
     }
@@ -708,8 +789,12 @@ export default function App() {
     }
 
     if (micRecorderRef.current) {
-      micRecorderRef.current.stop();
-      micRecorderRef.current = null;
+      if (forceCloseMic || !settingsRef.current.alwaysAllowMic) {
+        micRecorderRef.current.stop(true);
+        micRecorderRef.current = null;
+      } else {
+        micRecorderRef.current.pauseStreaming();
+      }
     }
 
     if (audioQueueRef.current) {
@@ -918,6 +1003,31 @@ export default function App() {
     }
   };
 
+  // Check microphone permission status on mount
+  useEffect(() => {
+    getMicrophonePermissionStatus().then((status) => {
+      setMicPermissionStatus(status);
+      if (status === 'granted') {
+        setMicPermissionDenied(false);
+      }
+    });
+  }, []);
+
+  const handleRequestAlwaysAllowMic = async () => {
+    try {
+      const ok = await requestMicrophoneAccess();
+      if (ok) {
+        setMicPermissionStatus('granted');
+        setMicPermissionDenied(false);
+        setSettings((prev) => ({ ...prev, alwaysAllowMic: true }));
+        setPersonaToast('Permanent Mic Access Enabled! (माइक हमेशा चालू रहेगा)');
+        setTimeout(() => setPersonaToast(null), 3000);
+      }
+    } catch (e) {
+      console.warn('Error enabling permanent mic:', e);
+    }
+  };
+
   // Dismiss a tool card from HUD
   const handleDismissTool = (id: string) => {
     setActiveTools((prev) => prev.filter((t) => t.id !== id));
@@ -966,7 +1076,7 @@ export default function App() {
         wakeWord={settings.wakeWord}
         alwaysAllowMic={settings.alwaysAllowMic}
         micPermissionStatus={micPermissionStatus}
-        onRequestAlwaysAllowMic={requestMicrophoneAccess}
+        onRequestAlwaysAllowMic={handleRequestAlwaysAllowMic}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTranscripts={() => setIsTranscriptOpen(true)}
         onOpenAndroidModal={() => setIsAndroidModalOpen(true)}

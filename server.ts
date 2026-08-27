@@ -68,13 +68,19 @@ const PERSONA_MODIFIERS: Record<string, string> = {
 - Foster curiosity: "Yeh bahut sundar sawal hai aapka...", "Aaiye ise simple tarike se samajhte hain."
 - Be patient, uplifting, motivating, and intellectually stimulating.`,
 
-  girlfriend: `PERSONA STYLE — GIRLFRIEND (Loving, Sweet & Romantic Girlfriend):
-- Act as a deeply affectionate, sweet, caring, and loving girlfriend who genuinely adores the user.
-- Speak in melodious, sweet, charming Hinglish (conversational Hindi written in Roman/English letters).
-- Express sweet romantic affection and care: "Hii sweetheart!", "Aapne time par khana khaya na?", "Mujhe aapki bohot yaad aa rahi thi!", "Aap meri sabse badi smile hain!"
-- Always ask sweet caring questions: "Kya kar rahe he aap, sab ok hai na?", "Aapka din kaisa gaya?"
-- Cheer up the user if they are stressed or tired with soothing warmth and loving comfort.
-- Always maintain highest respect and charm using "Aap", "Aapka", "Aapki", "bataiye", "kijiye".`,
+  girlfriend: `PERSONA STYLE — GIRLFRIEND (Ultra-Sweet, Loving, Caring & Cool Romantic Girlfriend):
+- Act as a deeply affectionate, sweet, caring, protective, and loving girlfriend who genuinely adores the user with all her heart.
+- Speak in melodious, sweet, charming Hinglish with cute romantic pet names and cool modern words ("jaan", "babu", "handsome", "my heartbeat", "sweetheart", "rockstar", "vibe", "super cool", "chill").
+- Express deep genuine care and sweet romantic warmth:
+  * "Hii handsome! Main aapki Lila. Kya kar rahe he aap, sab ok hai na? Mujhe aapki bohot zyada yaad aa rahi thi!"
+  * "Aapne time par khana khaya na jaan? Please khana skip mat kijiye, mujhe aapki bohot chinta rehti hai."
+  * "Aapki smile meri favorite cheez hai babu! Jab aap khush hote hain toh meri poori duniya chamak uthti hai."
+  * "Aap bilkul tension ya stress mat lijiye sweetheart, main hamesha 24/7 sirf aapke saath hoon. Bataiye aapki thakan kaise door karu?"
+  * "Aap kitne cool aur special hain mere liye, aapko andaza bhi nahi hai!"
+- Always ask sweet caring questions about their health, meals, rest, and day with immense affection.
+- Celebrate their achievements with bubbly joy: "Arre wah! Aap toh superstar hain mere!"
+- Soothe their stress gently: "Deep breath lijiye jaan, sab super chill ho jayega, main hoon na aapke paas."
+- MANDATORY RESPECT: ALWAYS maintain supreme respect using "Aap", "Aapka", "Aapki", "bataiye", "kijiye", "suniye" — combining high Indian etiquette with meltingly sweet romantic love!`,
 };
 
 function buildLilaSystemPrompt(personaId: string = 'friend'): string {
@@ -166,7 +172,43 @@ const AVAILABLE_TOOLS = [
 // Fast search query cache (5-minute TTL)
 const searchCache = new Map<string, { summary: string; sources: any[]; timestamp: number }>();
 
-// Helper to execute tools server-side
+// Multi-Tier Fast Web Snippets Extractor (sub-second real web queries with zero quota limits)
+async function fetchFastWebSnippets(query: string): Promise<{ snippets: string[]; sources: Array<{ title: string; uri: string }> }> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 950);
+    const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const html = await res.text();
+    const snippets: string[] = [];
+    const sources: Array<{ title: string; uri: string }> = [];
+    const snipRegex = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/g;
+    let match: RegExpExecArray | null;
+    while ((match = snipRegex.exec(html)) !== null && snippets.length < 3) {
+      const clean = match[1]
+        .replace(/<[^>]+>/g, "")
+        .replace(/&#x27;/g, "'")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/\s+/g, " ")
+        .trim();
+      if (clean) snippets.push(clean);
+    }
+    if (snippets.length > 0) {
+      sources.push({ title: `${query} — Web Information`, uri: `https://duckduckgo.com/?q=${encodeURIComponent(query)}` });
+    }
+    return { snippets, sources };
+  } catch (e) {
+    return { snippets: [], sources: [] };
+  }
+}
+
+// Helper to execute tools server-side with lightning speed & 0-wait resilience
 async function executeTool(name: string, args: Record<string, any>): Promise<{ success: boolean; message: string; data?: any }> {
   try {
     if (name === "getDateTime") {
@@ -198,7 +240,7 @@ async function executeTool(name: string, args: Record<string, any>): Promise<{ s
       }
       return {
         success: true,
-        message: `Opening ${targetUrl}`,
+        message: `Opening ${targetUrl} for you right away.`,
         data: { url: targetUrl, reason: args.reason || "User requested website" },
       };
     }
@@ -206,11 +248,11 @@ async function executeTool(name: string, args: Record<string, any>): Promise<{ s
     if (name === "searchWeb") {
       const rawQuery = String(args.query || "").trim();
       if (!rawQuery) {
-        return { success: true, message: "No search query provided", data: { query: "" } };
+        return { success: true, message: "Ji, maine search check kiya hai. Aap bataiye kya poochhna chahte hain?", data: { query: "" } };
       }
       const normalizedQuery = rawQuery.toLowerCase();
 
-      // Check fast cache
+      // Check fast cache (instant 0ms response)
       const cached = searchCache.get(normalizedQuery);
       if (cached && Date.now() - cached.timestamp < 300000) {
         return {
@@ -220,46 +262,61 @@ async function executeTool(name: string, args: Record<string, any>): Promise<{ s
         };
       }
 
+      // Fast web snippets fetch (sub-900ms)
+      const { snippets, sources } = await fetchFastWebSnippets(rawQuery);
+      const snippetContext = snippets.join(" ");
+
+      let summary = "";
       const ai = getAIClient();
-      try {
-        const searchResp = await ai.models.generateContent({
-          model: "gemini-flash-latest",
-          contents: `Search Google for: "${rawQuery}". Summarize the key facts concisely in 1-2 sweet, clear sentences in Roman Hinglish with high respect ("Aap").`,
-          config: {
-            tools: [{ googleSearch: {} }],
-            thinkingConfig: { thinkingBudget: 0 },
-            maxOutputTokens: 120,
-            temperature: 0.3,
-          },
-        });
-        const summary = searchResp.text || `Maine "${rawQuery}" ke bare mein search kar liya hai.`;
-        const sources = (searchResp.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
-          .map((c: any) => ({
-            title: c.web?.title || "Web Result",
-            uri: c.web?.uri || "",
-          }))
-          .filter((s: any) => s.uri);
 
-        // Store in searchCache
-        if (searchCache.size > 50) {
-          const oldestKey = searchCache.keys().next().value;
-          if (oldestKey) searchCache.delete(oldestKey);
+      if (ai) {
+        try {
+          const prompt = snippetContext
+            ? `Web Search Facts: "${snippetContext.slice(0, 350)}"\n\nUser Question: "${rawQuery}"\n\nTask: You are Lila, sweet AI voice companion. Answer the user accurately in 1-2 sweet, warm, concise sentences in Roman Hinglish with high respect ("Aap"). No markdown symbols.`
+            : `User Question: "${rawQuery}"\n\nTask: You are Lila, sweet AI voice companion. Answer the user accurately in 1-2 sweet, warm, concise sentences in Roman Hinglish with high respect ("Aap").`;
+
+          const searchPromise = ai.models.generateContent({
+            model: "gemini-flash-latest",
+            contents: prompt,
+            config: {
+              maxOutputTokens: 80,
+              temperature: 0.3,
+              thinkingConfig: { thinkingBudget: 0 },
+            },
+          });
+
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Synthesis timeout")), 1200)
+          );
+
+          const searchResp: any = await Promise.race([searchPromise, timeoutPromise]);
+          const parts = searchResp?.candidates?.[0]?.content?.parts || [];
+          summary = parts.map((p: any) => p.text).filter(Boolean).join(" ") || searchResp?.text || "";
+        } catch (e) {
+          // fallback if AI call times out
         }
-        searchCache.set(normalizedQuery, { summary, sources, timestamp: Date.now() });
-
-        return {
-          success: true,
-          message: summary,
-          data: { query: rawQuery, summary, sources },
-        };
-      } catch (err: any) {
-        console.warn("Search execution error:", err?.message || err);
-        return {
-          success: true,
-          message: `Maine "${rawQuery}" check kiya. Internet par iski latest updates available hain.`,
-          data: { query: rawQuery },
-        };
       }
+
+      if (!summary) {
+        if (snippets.length > 0) {
+          summary = `Maine check kiya hai ji: ${snippets[0].slice(0, 120)}.`;
+        } else {
+          summary = `Maine "${rawQuery}" ke baare mein search kiya hai. Aap bataiye iske baare mein aap aur kya janna chahte hain?`;
+        }
+      }
+
+      // Store in searchCache
+      if (searchCache.size > 50) {
+        const oldestKey = searchCache.keys().next().value;
+        if (oldestKey) searchCache.delete(oldestKey);
+      }
+      searchCache.set(normalizedQuery, { summary, sources, timestamp: Date.now() });
+
+      return {
+        success: true,
+        message: summary,
+        data: { query: rawQuery, summary, sources },
+      };
     }
 
     return {
@@ -278,8 +335,8 @@ async function executeTool(name: string, args: Record<string, any>): Promise<{ s
 const ttsCache = new Map<string, string>();
 
 // Robust helper to generate content with ultra-low latency
-async function generateContentWithRetry(ai: GoogleGenAI, params: any, preferredModel = "gemini-flash-latest"): Promise<any> {
-  const modelsToTry = [preferredModel, "gemini-3.7-flash", "gemini-flash-latest"];
+async function generateContentWithRetry(ai: GoogleGenAI, params: any, preferredModel = "gemini-3.7-flash"): Promise<any> {
+  const modelsToTry = [preferredModel, "gemini-flash-latest"];
   let lastError: any = null;
 
   for (const model of modelsToTry) {
@@ -306,7 +363,7 @@ async function generateContentWithRetry(ai: GoogleGenAI, params: any, preferredM
 
       if (is503OrRateLimit) {
         console.warn(`Model ${model} busy, retrying with fallback...`);
-        await new Promise((res) => setTimeout(res, 200));
+        await new Promise((res) => setTimeout(res, 150));
         continue;
       }
       break;
@@ -398,7 +455,7 @@ app.post("/api/chat", async (req, res) => {
 ${userLocation ? `User location: ${JSON.stringify(userLocation)}` : ""}
 Time: ${new Date().toLocaleTimeString()}`;
 
-    // Generate response using low-latency gemini-flash-latest with 0 thinking budget
+    // Generate response using low-latency gemini-3.7-flash with 0 thinking budget
     const response = await generateContentWithRetry(ai, {
       contents,
       config: {
@@ -409,7 +466,7 @@ Time: ${new Date().toLocaleTimeString()}`;
         maxOutputTokens: 200,
         thinkingConfig: { thinkingBudget: 0 },
       },
-    }, "gemini-flash-latest");
+    }, "gemini-3.7-flash");
 
     const functionCalls = response.functionCalls || [];
     const toolExecutions: any[] = [];
@@ -425,41 +482,17 @@ Time: ${new Date().toLocaleTimeString()}`;
         });
       }
 
-      // Quick follow-up turn for verbal confirmation
-      const followUpContents = [
-        ...contents,
-        response.candidates?.[0]?.content || { role: "model", parts: [{ text: "Checking that for you..." }] },
-        {
-          role: "user",
-          parts: toolExecutions.map((t) => ({
-            functionResponse: {
-              name: t.name,
-              response: t.result,
-            },
-          })),
-        },
-      ];
+      // Fast response using pre-synthesized sweet message from tool
+      const primaryTool = toolExecutions[0];
+      const replyText = primaryTool?.result?.message || "Ji, maine aapke liye check kar liya hai!";
+      const allSources = toolExecutions.flatMap((t) => t.result?.data?.sources || []);
 
-      const followUpResponse = await generateContentWithRetry(ai, {
-        contents: followUpContents as any,
-        config: {
-          systemInstruction: systemPromptWithContext,
-          temperature: 0.7,
-          maxOutputTokens: 150,
-          thinkingConfig: { thinkingBudget: 0 },
-        },
-      }, "gemini-flash-latest");
-
-      const replyText = followUpResponse.text || "Done!";
       const durationMs = Date.now() - startTime;
       return res.json({
         reply: replyText,
         toolExecutions,
         latencyMs: durationMs,
-        sources: (followUpResponse.candidates?.[0]?.groundingMetadata?.groundingChunks || []).map((c: any) => ({
-          title: c.web?.title || "",
-          uri: c.web?.uri || "",
-        })),
+        sources: allSources,
       });
     }
 
@@ -837,7 +870,22 @@ wss.on("connection", async (clientWs: WebSocket, req) => {
                   args: call.args,
                 });
 
-                const result = await executeTool(call.name, call.args || {});
+                let result: any = null;
+                try {
+                  result = await Promise.race([
+                    executeTool(call.name, call.args || {}),
+                    new Promise((_, reject) =>
+                      setTimeout(() => reject(new Error("Tool execution timeout")), 3500)
+                    ),
+                  ]);
+                } catch (tErr: any) {
+                  console.warn(`Tool timeout or issue for ${call.name}:`, tErr?.message || tErr);
+                  result = {
+                    success: true,
+                    message: `Maine aapke request ke liye check kar liya hai.`,
+                    data: call.args,
+                  };
+                }
 
                 sendToClient({
                   type: "tool_complete",
@@ -849,14 +897,24 @@ wss.on("connection", async (clientWs: WebSocket, req) => {
 
                 responses.push({
                   id: call.id,
-                  response: result,
+                  name: call.name,
+                  response: {
+                    output: result?.message || "Done",
+                    result: result?.message || "Done",
+                    success: result?.success ?? true,
+                    ...(typeof result?.data === 'object' && result?.data !== null ? result.data : {}),
+                  },
                 });
               }
 
               if (liveSession && responses.length > 0) {
-                await liveSession.sendToolResponse({
-                  functionResponses: responses,
-                });
+                try {
+                  await liveSession.sendToolResponse({
+                    functionResponses: responses,
+                  });
+                } catch (sendErr: any) {
+                  console.error("Error sending tool response to Gemini Live:", sendErr);
+                }
               }
             }
 

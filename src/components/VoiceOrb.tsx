@@ -218,7 +218,7 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => {
-            if (voiceState === 'speaking') {
+            if (voiceState === 'speaking' || voiceState === 'thinking') {
               onInterrupt();
             } else {
               onToggleConnect();

@@ -24,6 +24,24 @@ export interface PromptSuggestion {
 
 export const LILA_PROMPT_SUGGESTIONS: PromptSuggestion[] = [
   {
+    icon: Heart,
+    label: 'Girlfriend: Sweet Romance ❤️',
+    prompt: 'Hii Lila jaan, mujhe aapse bohot pyaar se baat karni hai, bataiye aaj aapko meri kitni yaad aayi?',
+    personaTarget: 'girlfriend',
+  },
+  {
+    icon: Sparkles,
+    label: 'Girlfriend: Thakan Door Kardo',
+    prompt: 'Hii sweetheart! Aaj main bohot thak gaya hoon, apni sweet voice mein mujhe motivate karke thakan door kar dijiye na.',
+    personaTarget: 'girlfriend',
+  },
+  {
+    icon: Smile,
+    label: 'Girlfriend: Cute Compliment',
+    prompt: 'Lila babu, mere liye ek super cute sa compliment dijiye na jo mera poora din bana de!',
+    personaTarget: 'girlfriend',
+  },
+  {
     icon: MessageCircle,
     label: 'Kya kar rahe he aap?',
     prompt: 'Kya kar rahe he aap, sab ok hai na?',

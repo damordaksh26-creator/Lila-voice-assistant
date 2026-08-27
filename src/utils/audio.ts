@@ -78,10 +78,10 @@ export class AudioQueuePlayer {
   private endCheckTimeout: any = null;
   private lowpassFilter?: BiquadFilterNode;
   private warmFilter?: BiquadFilterNode;
-  private pitchMultiplier = 1.06;
-  private detuneCents = Math.round(Math.log2(1.06) * 1200);
+  private pitchMultiplier = 1.10;
+  private detuneCents = Math.round(Math.log2(1.10) * 1200);
 
-  constructor(sampleRate = 24000, initialPitch = 1.06) {
+  constructor(sampleRate = 24000, initialPitch = 1.10) {
     this.sampleRate = sampleRate;
     this.setPitch(initialPitch);
   }
@@ -259,6 +259,53 @@ export class AudioQueuePlayer {
   }
 }
 
+// Global persistent stream cache for seamless zero-flicker mic operation
+let sharedMicStream: MediaStream | null = null;
+let sharedAudioCtx: AudioContext | null = null;
+
+export async function getWarmSharedMicStream(): Promise<MediaStream | null> {
+  try {
+    if (sharedMicStream && sharedMicStream.active && sharedMicStream.getAudioTracks().some(t => t.readyState === 'live')) {
+      return sharedMicStream;
+    }
+    if (!navigator?.mediaDevices?.getUserMedia) return null;
+
+    sharedMicStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    return sharedMicStream;
+  } catch (e) {
+    console.warn('Failed to obtain shared warm mic stream:', e);
+    return null;
+  }
+}
+
+export function releaseSharedMicStream() {
+  if (sharedMicStream) {
+    sharedMicStream.getTracks().forEach((track) => {
+      try {
+        track.stop();
+      } catch (e) {
+        // ignore
+      }
+    });
+    sharedMicStream = null;
+  }
+  if (sharedAudioCtx && sharedAudioCtx.state !== 'closed') {
+    try {
+      sharedAudioCtx.close();
+    } catch (e) {
+      // ignore
+    }
+    sharedAudioCtx = null;
+  }
+}
+
 export class MicRecorder {
   private stream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
@@ -267,8 +314,15 @@ export class MicRecorder {
   private source: MediaStreamAudioSourceNode | null = null;
   private muteGain: GainNode | null = null;
   private isRecording = false;
+  private isMuted = false;
+  private keepWarm = true;
 
-  constructor(private onChunk: (base64Chunk: string) => void) {}
+  constructor(
+    private onChunk: (base64Chunk: string) => void,
+    keepWarm: boolean = true
+  ) {
+    this.keepWarm = keepWarm;
+  }
 
   public async start(): Promise<boolean> {
     try {
@@ -277,19 +331,29 @@ export class MicRecorder {
         return false;
       }
 
-      // Request raw, low-latency audio stream from user device
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      // Reuse warm shared stream if available, otherwise obtain fresh stream
+      if (this.keepWarm) {
+        this.stream = await getWarmSharedMicStream();
+      }
+
+      if (!this.stream || !this.stream.active) {
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        if (this.keepWarm) {
+          sharedMicStream = this.stream;
+        }
+      }
 
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      // Initialize AudioContext at device native sample rate (e.g. 48kHz or 44.1kHz)
-      this.audioCtx = new AudioCtxClass();
+      if (!this.audioCtx || this.audioCtx.state === 'closed') {
+        this.audioCtx = new AudioCtxClass();
+      }
       if (this.audioCtx.state === 'suspended') {
         await this.audioCtx.resume();
       }
@@ -300,12 +364,20 @@ export class MicRecorder {
       this.analyser.fftSize = 128;
       this.analyser.smoothingTimeConstant = 0.7;
 
+      // Disconnect prior source if re-initializing
+      if (this.source) {
+        try {
+          this.source.disconnect();
+        } catch (e) {
+          // ignore
+        }
+      }
+
       this.source = this.audioCtx.createMediaStreamSource(this.stream);
-      // Select buffer size according to native sample rate for ~40-60ms chunks
       const bufferSize = inputSampleRate >= 44100 ? 2048 : 1024;
       this.processor = this.audioCtx.createScriptProcessor(bufferSize, 1, 1);
 
-      // Create a zero-gain node to prevent microphone feedback loop to speakers
+      // Create a zero-gain node to prevent feedback loop to speakers
       this.muteGain = this.audioCtx.createGain();
       this.muteGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
 
@@ -315,7 +387,7 @@ export class MicRecorder {
       this.muteGain.connect(this.audioCtx.destination);
 
       this.processor.onaudioprocess = (e) => {
-        if (!this.isRecording) return;
+        if (!this.isRecording || this.isMuted) return;
         const float32 = e.inputBuffer.getChannelData(0);
         // Resample from device native rate (48kHz/44.1kHz) down to 16000Hz for Gemini
         const resampled16k = resampleAudio(float32, inputSampleRate, 16000);
@@ -325,9 +397,14 @@ export class MicRecorder {
       };
 
       this.isRecording = true;
+      this.isMuted = false;
       return true;
     } catch (err: any) {
-      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError' || err?.message?.includes('Permission denied')) {
+      if (
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'PermissionDeniedError' ||
+        err?.message?.includes('Permission denied')
+      ) {
         console.warn('Microphone permission was not granted by user/browser.');
       } else {
         console.warn('Microphone access issue:', err?.message || err);
@@ -336,28 +413,68 @@ export class MicRecorder {
     }
   }
 
-  public stop() {
+  public pauseStreaming() {
+    this.isMuted = true;
+  }
+
+  public resumeStreaming() {
+    this.isMuted = false;
+    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume();
+    }
+  }
+
+  public stop(forceClose: boolean = false) {
     this.isRecording = false;
-    if (this.processor) {
-      this.processor.disconnect();
-      this.processor.onaudioprocess = null;
-      this.processor = null;
-    }
-    if (this.muteGain) {
-      this.muteGain.disconnect();
-      this.muteGain = null;
-    }
-    if (this.source) {
-      this.source.disconnect();
-      this.source = null;
-    }
-    if (this.stream) {
-      this.stream.getTracks().forEach((track) => track.stop());
-      this.stream = null;
-    }
-    if (this.audioCtx && this.audioCtx.state !== 'closed') {
-      this.audioCtx.close();
-      this.audioCtx = null;
+    this.isMuted = true;
+
+    if (forceClose || !this.keepWarm) {
+      if (this.processor) {
+        try {
+          this.processor.disconnect();
+          this.processor.onaudioprocess = null;
+        } catch (e) {
+          // ignore
+        }
+        this.processor = null;
+      }
+      if (this.muteGain) {
+        try {
+          this.muteGain.disconnect();
+        } catch (e) {
+          // ignore
+        }
+        this.muteGain = null;
+      }
+      if (this.source) {
+        try {
+          this.source.disconnect();
+        } catch (e) {
+          // ignore
+        }
+        this.source = null;
+      }
+      if (this.stream) {
+        this.stream.getTracks().forEach((track) => {
+          try {
+            track.stop();
+          } catch (e) {
+            // ignore
+          }
+        });
+        this.stream = null;
+        if (sharedMicStream === this.stream) {
+          sharedMicStream = null;
+        }
+      }
+      if (this.audioCtx && this.audioCtx.state !== 'closed') {
+        try {
+          this.audioCtx.close();
+        } catch (e) {
+          // ignore
+        }
+        this.audioCtx = null;
+      }
     }
   }
 
@@ -375,7 +492,7 @@ export class MicRecorder {
   }
 
   public getIsRecording(): boolean {
-    return this.isRecording;
+    return this.isRecording && !this.isMuted;
   }
 }
 

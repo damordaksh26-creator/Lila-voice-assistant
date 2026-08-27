@@ -22,7 +22,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   voiceState,
   currentVoice,
-  pitch = 1.06,
+  pitch = 1.10,
   persona,
   wakeWordEnabled,
   wakeWord,
