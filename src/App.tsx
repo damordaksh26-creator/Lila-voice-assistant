@@ -58,6 +58,7 @@ const DEFAULT_SETTINGS: VoiceSettingsConfig = {
   voice: LILA_IDENTITY.defaultVoice,
   pitch: 1.10, // Default pitch 1.1x (Sweet Young Girl)
   persona: LILA_IDENTITY.defaultPersona,
+  aiModel: 'gemini-2.5-flash',
   wakeWordEnabled: false, // Disabled on load to prevent background mic listening beeps
   wakeWord: LILA_IDENTITY.defaultWakeWord,
   wakeWordChime: false,
@@ -188,6 +189,11 @@ export default function App() {
 
   useEffect(() => {
     settingsRef.current = settings;
+    try {
+      localStorage.setItem('lila_settings_v2', JSON.stringify(settings));
+    } catch (e) {
+      console.warn('Failed to save settings to localStorage:', e);
+    }
   }, [settings]);
 
   useEffect(() => {

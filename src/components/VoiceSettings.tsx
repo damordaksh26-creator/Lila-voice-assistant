@@ -50,6 +50,8 @@ import {
   Camera,
   Layers,
   ChevronRight,
+  Save,
+  Zap,
 } from 'lucide-react';
 import {
   LilaPersonaId,
@@ -129,11 +131,22 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
   const [testActionNotice, setTestActionNotice] = useState<string | null>(null);
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
 
+  // Local draft state for settings & save feedback
+  const [draftConfig, setDraftConfig] = useState<VoiceSettingsConfig>(config);
+  const [savedToast, setSavedToast] = useState(false);
+  const [savedMessage, setSavedMessage] = useState('Settings saved successfully!');
+
   // Custom Contact Form State
   const [newContactName, setNewContactName] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactHindi, setNewContactHindi] = useState('');
   const [showAddContact, setShowAddContact] = useState(false);
+
+  // Inline Contact Editing State
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [editContactName, setEditContactName] = useState('');
+  const [editContactPhone, setEditContactPhone] = useState('');
+  const [editContactHindi, setEditContactHindi] = useState('');
 
   // Calculator & Notes Tester
   const [calcInput, setCalcInput] = useState('45 * 12');
@@ -145,14 +158,25 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
   const testMicCtxRef = useRef<AudioContext | null>(null);
   const isDark = theme === 'dark';
 
-  const isGirlfriendUnlocked = Boolean(config.secretGirlfriendUnlocked || config.persona === 'girlfriend');
+  // Sync draft state whenever modal opens or external config changes
+  useEffect(() => {
+    if (isOpen) {
+      setDraftConfig(config);
+      setEditingContactId(null);
+      setShowAddContact(false);
+    }
+  }, [isOpen, config]);
 
-  const removedDefaultIds = config.removedDefaultContactIds || [];
+  const hasUnsavedChanges = JSON.stringify(draftConfig) !== JSON.stringify(config);
+
+  const isGirlfriendUnlocked = Boolean(draftConfig.secretGirlfriendUnlocked || draftConfig.persona === 'girlfriend');
+
+  const removedDefaultIds = draftConfig.removedDefaultContactIds || [];
   const activeDefaultContacts = DEFAULT_CONTACTS.filter(
     (c) => !removedDefaultIds.includes(c.id)
   );
   const allContacts: ContactEntry[] = [
-    ...(config.customContacts || []),
+    ...(draftConfig.customContacts || []),
     ...activeDefaultContacts,
   ];
 
@@ -162,11 +186,44 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
     });
   }, []);
 
+  const updateDraft = (updates: Partial<VoiceSettingsConfig>) => {
+    setDraftConfig((prev) => ({ ...prev, ...updates }));
+  };
+
+  const handleSaveSettings = (customMessage = 'Settings saved successfully!') => {
+    onChangeConfig(draftConfig);
+    try {
+      localStorage.setItem('lila_settings_v2', JSON.stringify(draftConfig));
+    } catch (e) {
+      console.warn('Failed to persist settings:', e);
+    }
+    setSavedMessage(customMessage);
+    setSavedToast(true);
+    if (draftConfig.soundEffects) {
+      playSoundCue('pop');
+    }
+    setTimeout(() => {
+      setSavedToast(false);
+    }, 3000);
+  };
+
   const handleUnlockSecretGirlfriend = () => {
-    onChangeConfig({ secretGirlfriendUnlocked: true, persona: 'girlfriend' });
+    const updated = { ...draftConfig, secretGirlfriendUnlocked: true, persona: 'girlfriend' as LilaPersonaId };
+    setDraftConfig(updated);
+    onChangeConfig(updated);
+    try {
+      localStorage.setItem('lila_settings_v2', JSON.stringify(updated));
+    } catch (e) {
+      // ignore
+    }
     setSecretUnlockSuccess(true);
-    setTimeout(() => setSecretUnlockSuccess(false), 3000);
-    if (config.soundEffects) {
+    setSavedMessage('Secret Girlfriend Mode Unlocked & Saved! 💖');
+    setSavedToast(true);
+    setTimeout(() => {
+      setSecretUnlockSuccess(false);
+      setSavedToast(false);
+    }, 3000);
+    if (draftConfig.soundEffects) {
       playSoundCue('pop');
     }
   };
@@ -212,10 +269,17 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
     const ok = await requestMicrophoneAccess();
     if (ok) {
       setMicStatus('granted');
-      onChangeConfig({ alwaysAllowMic: true });
+      const updated = { ...draftConfig, alwaysAllowMic: true };
+      setDraftConfig(updated);
+      onChangeConfig(updated);
+      try {
+        localStorage.setItem('lila_settings_v2', JSON.stringify(updated));
+      } catch (e) {
+        // ignore
+      }
       setMicGrantedToast(true);
       setTimeout(() => setMicGrantedToast(false), 3000);
-      if (config.soundEffects) {
+      if (draftConfig.soundEffects) {
         playSoundCue('wake');
       }
     } else {
@@ -285,25 +349,25 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
     }
   };
 
-  const currentPitch = config.pitch ?? LILA_PITCH_CONFIG.default;
+  const currentPitch = draftConfig.pitch ?? LILA_PITCH_CONFIG.default;
   const pitchPercentDiff = Math.round((currentPitch - 1.0) * 100);
   const pitchFormattedPercent =
     pitchPercentDiff > 0 ? `+${pitchPercentDiff}%` : `${pitchPercentDiff}%`;
 
-  const currentPersona = LILA_PERSONAS[config.persona] || LILA_PERSONAS.friend;
+  const currentPersona = LILA_PERSONAS[draftConfig.persona] || LILA_PERSONAS.friend;
 
   const handlePreviewTone = () => {
     previewPitchTone(currentPitch);
   };
 
   const handleResetPitch = () => {
-    onChangeConfig({ pitch: LILA_PITCH_CONFIG.default });
+    updateDraft({ pitch: LILA_PITCH_CONFIG.default });
     previewPitchTone(LILA_PITCH_CONFIG.default);
   };
 
   const handleTestWakeWord = () => {
     setTestWakeWordState('testing');
-    if (config.wakeWordChime) {
+    if (draftConfig.wakeWordChime) {
       playSoundCue('wake');
     }
     setTimeout(() => {
@@ -332,14 +396,14 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
           phone_number: phoneNumber,
           contact_name: contactName,
           math_expression: mathExpr,
-          note_app: config.preferredNotesApp || 'google_keep',
+          note_app: draftConfig.preferredNotesApp || 'google_keep',
         },
-        config.customContacts || [],
-        config.removedDefaultContactIds || []
+        draftConfig.customContacts || [],
+        draftConfig.removedDefaultContactIds || []
       );
 
       setTestActionNotice(res.message);
-      if (config.soundEffects) {
+      if (draftConfig.soundEffects) {
         playSoundCue('tool');
       }
       setTimeout(() => setTestActionNotice(null), 3500);
@@ -360,34 +424,152 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
       avatarColor: 'bg-indigo-500',
     };
 
-    const updated = [newEntry, ...(config.customContacts || [])];
-    onChangeConfig({ customContacts: updated });
+    const updated = [newEntry, ...(draftConfig.customContacts || [])];
+    const newCfg = { ...draftConfig, customContacts: updated };
+    setDraftConfig(newCfg);
+    onChangeConfig(newCfg);
+    try {
+      localStorage.setItem('lila_settings_v2', JSON.stringify(newCfg));
+    } catch (err) {
+      // ignore
+    }
+
     setNewContactName('');
     setNewContactPhone('');
     setNewContactHindi('');
     setShowAddContact(false);
+    handleSaveSettings(`Contact "${newEntry.name}" added and saved!`);
+  };
+
+  const handleStartEditContact = (c: ContactEntry) => {
+    setEditingContactId(c.id);
+    setEditContactName(c.name);
+    setEditContactPhone(c.phoneNumber);
+    setEditContactHindi(c.hindiName || '');
+  };
+
+  const handleCancelEditContact = () => {
+    setEditingContactId(null);
+    setEditContactName('');
+    setEditContactPhone('');
+    setEditContactHindi('');
+  };
+
+  const handleSaveEditedContact = (e: React.FormEvent, originalContact: ContactEntry) => {
+    e.preventDefault();
+    if (!editContactName.trim() || !editContactPhone.trim()) return;
+
+    const isPreset = DEFAULT_CONTACTS.some((def) => def.id === originalContact.id);
+
+    let updatedCustomContacts = [...(draftConfig.customContacts || [])];
+    let updatedRemovedDefaults = [...(draftConfig.removedDefaultContactIds || [])];
+
+    if (isPreset) {
+      // Remove from default preset list and add user customized entry to customContacts
+      if (!updatedRemovedDefaults.includes(originalContact.id)) {
+        updatedRemovedDefaults.push(originalContact.id);
+      }
+      const existingCustomIdx = updatedCustomContacts.findIndex((c) => c.id === originalContact.id);
+      const customizedEntry: ContactEntry = {
+        ...originalContact,
+        name: editContactName.trim(),
+        hindiName: editContactHindi.trim() || undefined,
+        phoneNumber: editContactPhone.trim(),
+      };
+
+      if (existingCustomIdx >= 0) {
+        updatedCustomContacts[existingCustomIdx] = customizedEntry;
+      } else {
+        updatedCustomContacts.unshift(customizedEntry);
+      }
+    } else {
+      // Existing custom contact
+      updatedCustomContacts = updatedCustomContacts.map((c) =>
+        c.id === originalContact.id
+          ? {
+              ...c,
+              name: editContactName.trim(),
+              hindiName: editContactHindi.trim() || undefined,
+              phoneNumber: editContactPhone.trim(),
+            }
+          : c
+      );
+    }
+
+    const newCfg: VoiceSettingsConfig = {
+      ...draftConfig,
+      customContacts: updatedCustomContacts,
+      removedDefaultContactIds: updatedRemovedDefaults,
+    };
+
+    setDraftConfig(newCfg);
+    onChangeConfig(newCfg);
+    try {
+      localStorage.setItem('lila_settings_v2', JSON.stringify(newCfg));
+    } catch (err) {
+      // ignore
+    }
+
+    setEditingContactId(null);
+    handleSaveSettings(`Contact "${editContactName.trim()}" phone number updated & saved!`);
   };
 
   const handleDeleteContact = (contact: ContactEntry) => {
-    const isCustom = contact.id.startsWith('custom_') || (config.customContacts || []).some((c) => c.id === contact.id);
+    const isCustom = contact.id.startsWith('custom_') || (draftConfig.customContacts || []).some((c) => c.id === contact.id);
+    let updatedCustom = draftConfig.customContacts || [];
+    let updatedRemoved = draftConfig.removedDefaultContactIds || [];
+
     if (isCustom) {
-      const updated = (config.customContacts || []).filter((c) => c.id !== contact.id);
-      onChangeConfig({ customContacts: updated });
+      updatedCustom = updatedCustom.filter((c) => c.id !== contact.id);
     } else {
-      // It's a pre-given default contact (e.g. mom, dad, rahul, priya, home, emergency)
-      const currentRemoved = config.removedDefaultContactIds || [];
-      const updatedRemoved = Array.from(new Set([...currentRemoved, contact.id]));
-      onChangeConfig({ removedDefaultContactIds: updatedRemoved });
+      updatedRemoved = Array.from(new Set([...updatedRemoved, contact.id]));
     }
+
+    const newCfg: VoiceSettingsConfig = {
+      ...draftConfig,
+      customContacts: updatedCustom,
+      removedDefaultContactIds: updatedRemoved,
+    };
+
+    setDraftConfig(newCfg);
+    onChangeConfig(newCfg);
+    try {
+      localStorage.setItem('lila_settings_v2', JSON.stringify(newCfg));
+    } catch (e) {
+      // ignore
+    }
+    handleSaveSettings(`Contact "${contact.name}" removed and saved!`);
   };
 
   const handleRemoveAllPresetContacts = () => {
     const allDefaultIds = DEFAULT_CONTACTS.map((c) => c.id);
-    onChangeConfig({ removedDefaultContactIds: allDefaultIds });
+    const newCfg: VoiceSettingsConfig = {
+      ...draftConfig,
+      removedDefaultContactIds: allDefaultIds,
+    };
+    setDraftConfig(newCfg);
+    onChangeConfig(newCfg);
+    try {
+      localStorage.setItem('lila_settings_v2', JSON.stringify(newCfg));
+    } catch (e) {
+      // ignore
+    }
+    handleSaveSettings('All pre-set numbers removed and saved!');
   };
 
   const handleRestorePresetContacts = () => {
-    onChangeConfig({ removedDefaultContactIds: [] });
+    const newCfg: VoiceSettingsConfig = {
+      ...draftConfig,
+      removedDefaultContactIds: [],
+    };
+    setDraftConfig(newCfg);
+    onChangeConfig(newCfg);
+    try {
+      localStorage.setItem('lila_settings_v2', JSON.stringify(newCfg));
+    } catch (e) {
+      // ignore
+    }
+    handleSaveSettings('Pre-set default numbers restored and saved!');
   };
 
   const handleRunCalculatorTest = () => {
@@ -412,7 +594,9 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
         onClose={() => setIsOnboardingModalOpen(false)}
         onComplete={() => {
           setIsOnboardingModalOpen(false);
-          onChangeConfig({ hasCompletedOnboarding: true });
+          const updated = { ...draftConfig, hasCompletedOnboarding: true };
+          setDraftConfig(updated);
+          onChangeConfig(updated);
         }}
       />
 
@@ -422,7 +606,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
             initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
-            className={`w-full max-w-2xl border rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] transition-all backdrop-blur-xl ${
+            className={`w-full max-w-2xl border rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] transition-all backdrop-blur-xl ${
               isDark
                 ? 'bg-[#101217] border-white/[0.08] text-zinc-100 shadow-black/60'
                 : 'bg-white border-zinc-200 text-zinc-900 shadow-xl'
@@ -430,7 +614,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
           >
             {/* Header */}
             <div
-              className={`p-5 border-b flex items-center justify-between transition-colors ${
+              className={`p-4 sm:p-5 border-b flex items-center justify-between transition-colors ${
                 isDark ? 'bg-[#101217] border-white/[0.08]' : 'bg-white border-zinc-100'
               }`}
             >
@@ -443,27 +627,77 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                   <Settings className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                    Preferences & Full Device Control (v3)
+                  <h3 className={`text-sm font-semibold flex items-center gap-2 ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                    <span>Preferences & Full Device Control</span>
+                    {hasUnsavedChanges && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-300 font-semibold animate-pulse border border-amber-500/30">
+                        Unsaved Changes
+                      </span>
+                    )}
                   </h3>
                   <p className={`text-xs font-light ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    Calling · Calculator · MediaSession · Notepad · Voice
+                    Phone Numbers · AI & Voice Models · Personas · Protocol
                   </p>
                 </div>
               </div>
 
-              <button
-                id="lila-close-settings-modal-btn"
-                onClick={onClose}
-                className={`p-2 rounded-full transition-colors cursor-pointer ${
-                  isDark
-                    ? 'text-zinc-400 hover:text-white hover:bg-white/10'
-                    : 'text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100'
-                }`}
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Header Save Button */}
+                <button
+                  id="header-save-settings-btn"
+                  type="button"
+                  onClick={() => handleSaveSettings()}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+                    hasUnsavedChanges
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400/30 animate-pulse'
+                      : isDark
+                      ? 'bg-white/10 hover:bg-white/20 text-zinc-200'
+                      : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
+                  }`}
+                  title="Save all changes to settings"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{hasUnsavedChanges ? 'Save Changes' : 'Saved'}</span>
+                </button>
+
+                <button
+                  id="lila-close-settings-modal-btn"
+                  onClick={onClose}
+                  className={`p-2 rounded-full transition-colors cursor-pointer ${
+                    isDark
+                      ? 'text-zinc-400 hover:text-white hover:bg-white/10'
+                      : 'text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100'
+                  }`}
+                  title="Close Modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+
+            {/* Saved Notification Banner */}
+            <AnimatePresence>
+              {savedToast && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="bg-emerald-600 text-white px-4 py-2 text-xs font-medium flex items-center justify-between shadow-xs z-10"
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+                    <span>{savedMessage}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSavedToast(false)}
+                    className="p-1 hover:bg-emerald-700 rounded text-emerald-100"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Navigation Tabs */}
             <div
@@ -485,7 +719,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                 }`}
               >
                 <Smartphone className="w-3.5 h-3.5" />
-                <span>Device Control (v3)</span>
+                <span>Device & Phone Numbers ({allContacts.length})</span>
               </button>
 
               <button
@@ -506,23 +740,6 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
               </button>
 
               <button
-                id="tab-wake-word"
-                onClick={() => setActiveTab('wake_word')}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
-                  activeTab === 'wake_word'
-                    ? isDark
-                      ? 'bg-white text-black shadow-xs'
-                      : 'bg-black text-white shadow-xs'
-                    : isDark
-                    ? 'text-gray-400 hover:bg-white/10 hover:text-white'
-                    : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
-                }`}
-              >
-                <Mic className="w-3.5 h-3.5" />
-                <span>Wake Word & Mic</span>
-              </button>
-
-              <button
                 id="tab-voice"
                 onClick={() => setActiveTab('voice')}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
@@ -536,7 +753,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                 }`}
               >
                 <Sliders className="w-3.5 h-3.5" />
-                <span>Voice & Pitch</span>
+                <span>Voice & Pitch ({draftConfig.voice})</span>
               </button>
 
               <button
@@ -553,13 +770,30 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                 }`}
               >
                 <Cpu className="w-3.5 h-3.5" />
-                <span>Engine & Protocol</span>
+                <span>AI Models & Protocol</span>
+              </button>
+
+              <button
+                id="tab-wake-word"
+                onClick={() => setActiveTab('wake_word')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'wake_word'
+                    ? isDark
+                      ? 'bg-white text-black shadow-xs'
+                      : 'bg-black text-white shadow-xs'
+                    : isDark
+                    ? 'text-gray-400 hover:bg-white/10 hover:text-white'
+                    : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                }`}
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span>Wake Word & Mic</span>
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto flex-1 custom-scrollbar space-y-6">
-              {/* TAB 1: DEVICE CONTROL & SYSTEM AUTOMATION (v3) */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar space-y-6">
+              {/* TAB 1: DEVICE CONTROL & PHONE NUMBERS EDIT */}
               {activeTab === 'device_control' && (
                 <div className="space-y-5">
                   {/* Permissions Health & Onboarding Hub */}
@@ -583,7 +817,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                       <button
                         type="button"
                         onClick={() => setIsOnboardingModalOpen(true)}
-                        className="px-3.5 py-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 shrink-0 active:scale-95"
+                        className="px-3.5 py-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 shrink-0 active:scale-95 cursor-pointer"
                       >
                         <Sparkles className="w-3 h-3" />
                         <span>Run Setup Flow</span>
@@ -641,46 +875,10 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                           {bridgeStatus.contactsGranted ? 'Granted' : 'Allow'}
                         </button>
                       </div>
-
-                      {/* Notification Access */}
-                      <div className="p-2.5 rounded-xl bg-white/90 border border-rose-100 flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-semibold flex items-center gap-1 text-slate-800">
-                            <Bell className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Notification Access</span>
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-light block">MediaSession</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={requestNotificationAccessSettings}
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-semibold cursor-pointer ${bridgeStatus.notificationAccessGranted ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
-                        >
-                          {bridgeStatus.notificationAccessGranted ? 'Active' : 'Settings'}
-                        </button>
-                      </div>
-
-                      {/* Accessibility Service */}
-                      <div className="p-2.5 rounded-xl bg-white/90 border border-rose-100 flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-semibold flex items-center gap-1 text-slate-800">
-                            <Layers className="w-3.5 h-3.5 text-emerald-500" />
-                            <span>Accessibility UI</span>
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-light block">Calc & Notepad</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={requestAccessibilitySettings}
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-semibold cursor-pointer ${bridgeStatus.accessibilityAccessGranted ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
-                        >
-                          {bridgeStatus.accessibilityAccessGranted ? 'Active' : 'Settings'}
-                        </button>
-                      </div>
                     </div>
                   </div>
 
-                  {/* STEP 1: Phone Calling & Voice Contacts Book */}
+                  {/* STEP 1: Phone Calling & Voice Contacts Book (With Edit & Save) */}
                   <div
                     className={`p-4 rounded-2xl border shadow-sm space-y-3.5 transition-colors ${
                       isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'bg-white border-gray-200'
@@ -690,10 +888,10 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                       <div className="space-y-0.5">
                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
                           <PhoneCall className="w-3.5 h-3.5 text-rose-500" />
-                          <span>Step 1: Voice Calling & Contacts ({allContacts.length})</span>
+                          <span>Step 1: Voice Calling & Phone Numbers ({allContacts.length})</span>
                         </label>
                         <p className={`text-[11px] font-light ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
-                          Numbers dialed when you say "Call Mom", "Call Papa", or custom contacts.
+                          Edit any phone number, add your custom contacts, or dial with voice ("Call Mom", "Call Papa").
                         </p>
                       </div>
 
@@ -709,7 +907,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                                 ? 'bg-rose-950/40 text-rose-300 border-rose-800/50 hover:bg-rose-900/60'
                                 : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
                             }`}
-                            title="Remove all pre-given contacts (Mom, Papa, Rahul, Priya, Home, Emergency)"
+                            title="Remove all pre-given contacts"
                           >
                             <Trash2 className="w-3 h-3" />
                             <span>Remove Pre-set ({activeDefaultContacts.length})</span>
@@ -739,7 +937,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                           type="button"
                           id="btn-add-contact-toggle"
                           onClick={() => setShowAddContact(!showAddContact)}
-                          className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 cursor-pointer px-2 py-1"
+                          className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 cursor-pointer px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50/50 hover:bg-rose-100"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           <span>{showAddContact ? 'Cancel' : 'Add Contact'}</span>
@@ -759,7 +957,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                       >
                         <div className="text-xs font-semibold text-rose-600 flex items-center gap-1">
                           <Plus className="w-3.5 h-3.5" />
-                          <span>Add New Voice Contact</span>
+                          <span>Add New Voice Contact (नया कांटेक्ट जोड़ें)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <input
@@ -810,9 +1008,10 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                           </button>
                           <button
                             type="submit"
-                            className="px-3.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-xs transition-colors"
+                            className="px-3.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-xs transition-colors flex items-center gap-1"
                           >
-                            Save Contact
+                            <Save className="w-3.5 h-3.5" />
+                            <span>Save Contact</span>
                           </button>
                         </div>
                       </form>
@@ -864,9 +1063,95 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                         </div>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         {allContacts.map((c) => {
-                          const isPreset = !c.id.startsWith('custom_') && DEFAULT_CONTACTS.some((def) => def.id === c.id);
+                          const isPreset = DEFAULT_CONTACTS.some((def) => def.id === c.id);
+                          const isEditingThis = editingContactId === c.id;
+
+                          if (isEditingThis) {
+                            return (
+                              <form
+                                key={c.id}
+                                onSubmit={(e) => handleSaveEditedContact(e, c)}
+                                className={`p-3 rounded-xl border space-y-2 col-span-1 sm:col-span-2 ${
+                                  isDark
+                                    ? 'bg-rose-950/20 border-rose-500/40 text-white'
+                                    : 'bg-rose-50/50 border-rose-300 text-zinc-900'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between text-xs font-semibold text-rose-600">
+                                  <span className="flex items-center gap-1">
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                    <span>Edit Contact & Phone Number: {c.name}</span>
+                                  </span>
+                                  <span className="text-[10px] text-zinc-500 font-normal">
+                                    {isPreset ? 'Will save as custom override' : 'Custom Contact'}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <div>
+                                    <label className="text-[10px] text-zinc-400 block mb-0.5">Contact Name</label>
+                                    <input
+                                      type="text"
+                                      value={editContactName}
+                                      onChange={(e) => setEditContactName(e.target.value)}
+                                      className={`w-full px-2.5 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-rose-500 ${
+                                        isDark ? 'bg-[#181A20] border-white/20 text-white' : 'bg-white border-zinc-300'
+                                      }`}
+                                      required
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] text-zinc-400 block mb-0.5">Hindi Tag / Relation</label>
+                                    <input
+                                      type="text"
+                                      value={editContactHindi}
+                                      onChange={(e) => setEditContactHindi(e.target.value)}
+                                      placeholder="e.g. मम्मी, पापा, दोस्त"
+                                      className={`w-full px-2.5 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-rose-500 ${
+                                        isDark ? 'bg-[#181A20] border-white/20 text-white' : 'bg-white border-zinc-300'
+                                      }`}
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] text-zinc-400 block mb-0.5">Phone Number</label>
+                                    <input
+                                      type="tel"
+                                      value={editContactPhone}
+                                      onChange={(e) => setEditContactPhone(e.target.value)}
+                                      className={`w-full px-2.5 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-rose-500 font-mono ${
+                                        isDark ? 'bg-[#181A20] border-white/20 text-white' : 'bg-white border-zinc-300'
+                                      }`}
+                                      required
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-end gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelEditContact}
+                                    className={`px-3 py-1 text-xs rounded-lg cursor-pointer ${
+                                      isDark ? 'text-zinc-400 hover:text-white' : 'text-gray-600 hover:text-black'
+                                    }`}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    className="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-xs transition-colors flex items-center gap-1"
+                                  >
+                                    <Save className="w-3.5 h-3.5" />
+                                    <span>Save Phone Number</span>
+                                  </button>
+                                </div>
+                              </form>
+                            );
+                          }
+
                           return (
                             <div
                               key={c.id}
@@ -909,8 +1194,8 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                                     </span>
                                   </div>
                                   <span
-                                    className={`text-[11px] font-mono block truncate ${
-                                      isDark ? 'text-zinc-400' : 'text-gray-500'
+                                    className={`text-[11px] font-mono block truncate font-medium ${
+                                      isDark ? 'text-zinc-300' : 'text-gray-700'
                                     }`}
                                   >
                                     {c.phoneNumber}
@@ -918,16 +1203,35 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                                 </div>
                               </div>
 
-                              <div className="flex items-center space-x-1.5 shrink-0">
+                              <div className="flex items-center space-x-1 shrink-0">
+                                {/* Edit Button */}
+                                <button
+                                  type="button"
+                                  id={`btn-edit-contact-${c.id}`}
+                                  onClick={() => handleStartEditContact(c)}
+                                  className={`p-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                                    isDark
+                                      ? 'text-zinc-300 hover:text-white hover:bg-white/10'
+                                      : 'text-gray-600 hover:text-black hover:bg-gray-200'
+                                  }`}
+                                  title={`Edit phone number for ${c.name}`}
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span className="text-[10px]">Edit</span>
+                                </button>
+
+                                {/* Call Button */}
                                 <button
                                   type="button"
                                   onClick={() => handleExecuteQuickAppTest('call', 'phone', undefined, undefined, c.phoneNumber, c.name)}
-                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold flex items-center space-x-1 cursor-pointer transition-colors shadow-xs active:scale-95"
+                                  className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold flex items-center space-x-1 cursor-pointer transition-colors shadow-xs active:scale-95"
                                   title={`Call ${c.name} (${c.phoneNumber})`}
                                 >
                                   <PhoneCall className="w-3 h-3" />
                                   <span>Call</span>
                                 </button>
+
+                                {/* Delete / Remove Button */}
                                 <button
                                   type="button"
                                   id={`btn-remove-contact-${c.id}`}
@@ -951,7 +1255,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                   </div>
 
                   {/* STEP 3: Built-in App Automation (Calculator & Notepad) */}
-                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
+                  <div className="p-4 rounded-2xl bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/[0.08] shadow-sm space-y-3">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
                       <Calculator className="w-3.5 h-3.5 text-rose-500" />
                       <span>Step 3: Built-in App Automation (कैलकुलेटर और नोटपैड)</span>
@@ -959,15 +1263,15 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {/* Calculator Automation Card */}
-                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                      <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 space-y-2.5">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
                             <Calculator className="w-4 h-4 text-rose-600" />
                             <span>Calculator Button Automation</span>
                           </span>
                           <span className="text-[10px] font-mono text-slate-500">Accessibility</span>
                         </div>
-                        <p className="text-[11px] text-slate-600 font-light">
+                        <p className="text-[11px] text-slate-600 dark:text-zinc-400 font-light">
                           Taps numeric & operator buttons sequentially in device Calculator.
                         </p>
                         <div className="flex items-center gap-1.5">
@@ -976,7 +1280,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                             value={calcInput}
                             onChange={(e) => setCalcInput(e.target.value)}
                             placeholder="e.g. 45 * 12 or 500 + 250"
-                            className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white font-mono"
+                            className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-white/20 bg-white dark:bg-[#181A20] font-mono dark:text-white"
                           />
                           <button
                             type="button"
@@ -987,9 +1291,9 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                           </button>
                         </div>
                         {calcResult && (
-                          <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
+                          <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-xs">
                             <strong>Result:</strong> {calcResult} &nbsp;
-                            <span className="text-[10px] text-emerald-700">
+                            <span className="text-[10px] text-emerald-700 dark:text-emerald-400">
                               (Buttons: {calcSteps.join(' ')} )
                             </span>
                           </div>
@@ -997,15 +1301,15 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                       </div>
 
                       {/* Notepad Dictation Card */}
-                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                      <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 space-y-2.5">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
                             <Edit3 className="w-4 h-4 text-purple-600" />
                             <span>Notepad / Keep Dictation</span>
                           </span>
                           <span className="text-[10px] font-mono text-slate-500">Text Injection</span>
                         </div>
-                        <p className="text-[11px] text-slate-600 font-light">
+                        <p className="text-[11px] text-slate-600 dark:text-zinc-400 font-light">
                           Injects dictated text into editable nodes of Note apps.
                         </p>
                         <div className="flex items-center gap-1.5">
@@ -1014,7 +1318,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                             value={noteInput}
                             onChange={(e) => setNoteInput(e.target.value)}
                             placeholder="Note text to inject..."
-                            className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white"
+                            className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-white/20 bg-white dark:bg-[#181A20] dark:text-white"
                           />
                           <button
                             type="button"
@@ -1027,147 +1331,38 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                       </div>
                     </div>
                   </div>
-
-                  {/* STEP 2: Media & System Quick Triggers */}
-                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <Radio className="w-3.5 h-3.5 text-gray-600" />
-                        <span>Step 2: MediaSession & Quick System Triggers</span>
-                      </label>
-                      <span className="text-[10px] text-gray-400 font-mono">Instant Dispatch</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleExecuteQuickAppTest('pause', 'youtube')}
-                        className="p-2.5 rounded-xl border border-gray-200 hover:border-rose-300 hover:bg-rose-50/40 text-left transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-0.5">
-                          <Pause className="w-3.5 h-3.5 text-rose-500" />
-                          <span>Pause Media</span>
-                        </div>
-                        <span className="text-[10px] text-gray-500 font-light block">YouTube / Player</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleExecuteQuickAppTest('resume', 'youtube')}
-                        className="p-2.5 rounded-xl border border-gray-200 hover:border-rose-300 hover:bg-rose-50/40 text-left transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-0.5">
-                          <Play className="w-3.5 h-3.5 text-rose-500" />
-                          <span>Resume Media</span>
-                        </div>
-                        <span className="text-[10px] text-gray-500 font-light block">Playback</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleExecuteQuickAppTest('next', 'spotify')}
-                        className="p-2.5 rounded-xl border border-gray-200 hover:border-rose-300 hover:bg-rose-50/40 text-left transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-0.5">
-                          <SkipForward className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>Next Track</span>
-                        </div>
-                        <span className="text-[10px] text-gray-500 font-light block">Skip forward</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleExecuteQuickAppTest('volume_up', 'system')}
-                        className="p-2.5 rounded-xl border border-gray-200 hover:border-rose-300 hover:bg-rose-50/40 text-left transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-0.5">
-                          <Volume2 className="w-3.5 h-3.5 text-blue-500" />
-                          <span>Volume Up</span>
-                        </div>
-                        <span className="text-[10px] text-gray-500 font-light block">+1 Step</span>
-                      </button>
-                    </div>
-
-                    {testActionNotice && (
-                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-[11px] flex items-center gap-2">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                        <span>{testActionNotice}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Android Native Companion Project Source Code Viewer */}
-                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <span className="text-xs font-semibold text-[#1D1D1F] flex items-center gap-1.5">
-                          <Code2 className="w-4 h-4 text-gray-700" />
-                          <span>Android Companion Source Files (Kotlin & XML)</span>
-                        </span>
-                        <span className="text-[11px] text-gray-500 font-light block">
-                          Drop these into Android Studio to compile your native APK
-                        </span>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleCopyCode(ANDROID_COMPANION_FILES[selectedCompanionIndex]?.code || '')}
-                        className="px-3 py-1.5 rounded-full bg-black hover:bg-neutral-800 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                      >
-                        {copiedCodeToast ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" />
-                            <span>Copied!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span>Copy File</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    {/* File Selector Tabs */}
-                    <div className="flex gap-1 overflow-x-auto pb-1 custom-scrollbar">
-                      {ANDROID_COMPANION_FILES.map((file, idx) => {
-                        const isSelected = selectedCompanionIndex === idx;
-                        return (
-                          <button
-                            key={file.filename}
-                            type="button"
-                            onClick={() => setSelectedCompanionIndex(idx)}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-mono whitespace-nowrap transition-colors cursor-pointer ${
-                              isSelected
-                                ? 'bg-neutral-900 text-white font-semibold'
-                                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                            }`}
-                          >
-                            {file.filename}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Code Container */}
-                    <div className="relative rounded-xl bg-[#12141A] text-gray-300 p-3 font-mono text-[10px] leading-relaxed overflow-x-auto max-h-56 custom-scrollbar border border-[#2B2F3A]">
-                      <div className="text-[9px] uppercase tracking-wider text-rose-400 font-bold mb-1.5">
-                        {ANDROID_COMPANION_FILES[selectedCompanionIndex]?.description}
-                      </div>
-                      <pre className="whitespace-pre">{ANDROID_COMPANION_FILES[selectedCompanionIndex]?.code}</pre>
-                    </div>
-                  </div>
                 </div>
               )}
 
-              {/* TAB 2: PERSONA SETTINGS */}
+              {/* TAB 2: PERSONA SETTINGS (With Save Button) */}
               {activeTab === 'persona' && (
-                <div className="space-y-4">
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider">
+                        Select Lila's Persona (व्यक्तित्व चुनें)
+                      </h4>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Choose how Lila speaks and connects with you. Click any persona and hit Save.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      id="save-persona-btn"
+                      onClick={() => handleSaveSettings(`Persona "${currentPersona.name}" active & saved!`)}
+                      className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Save Persona</span>
+                    </button>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {Object.values(LILA_PERSONAS)
                       .filter((p) => !p.isSecret || isGirlfriendUnlocked)
                       .map((p) => {
-                        const isSelected = config.persona === p.id;
+                        const isSelected = draftConfig.persona === p.id;
                         const Icon = PERSONA_ICONS[p.id] || Heart;
                         const isGirlfriend = p.id === 'girlfriend';
 
@@ -1175,14 +1370,18 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                           <div
                             key={p.id}
                             id={`persona-card-${p.id}`}
-                            onClick={() => onChangeConfig({ persona: p.id })}
+                            onClick={() => updateDraft({ persona: p.id })}
                             className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative ${
                               isGirlfriend
                                 ? isSelected
-                                  ? 'bg-rose-50 border-rose-500 ring-2 ring-rose-200 shadow-sm'
-                                  : 'bg-rose-50/30 border-rose-200 hover:bg-rose-50/60'
+                                  ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-500 ring-2 ring-rose-300 shadow-sm'
+                                  : 'bg-rose-50/30 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50 hover:bg-rose-50/60'
                                 : isSelected
-                                ? 'bg-white border-black ring-2 ring-black/10 shadow-sm'
+                                ? isDark
+                                  ? 'bg-white/10 border-white ring-2 ring-white/20 shadow-md'
+                                  : 'bg-white border-black ring-2 ring-black/10 shadow-sm'
+                                : isDark
+                                ? 'bg-white/[0.02] border-white/[0.08] hover:bg-white/[0.05]'
                                 : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
                             }`}
                           >
@@ -1193,8 +1392,10 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                                     isGirlfriend
                                       ? 'bg-rose-500 text-white'
                                       : isSelected
-                                      ? 'bg-black text-white'
-                                      : 'bg-gray-100 text-gray-700'
+                                      ? isDark
+                                        ? 'bg-white text-black'
+                                        : 'bg-black text-white'
+                                      : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'
                                   }`}
                                 >
                                   <Icon className="w-3.5 h-3.5" />
@@ -1207,49 +1408,58 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                                         isGirlfriend
                                           ? 'bg-rose-500 text-white border-rose-500'
                                           : isSelected
-                                          ? 'bg-neutral-900 text-white border-black'
-                                          : 'bg-gray-100 text-gray-700 border-gray-200'
+                                          ? isDark
+                                            ? 'bg-white text-black border-white'
+                                            : 'bg-neutral-900 text-white border-black'
+                                          : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10'
                                       }`}
                                     >
                                       {isGirlfriend ? '💖 Secret' : p.tag}
                                     </span>
                                   </div>
-                                  <div className={`text-[11px] font-medium ${isGirlfriend ? 'text-rose-600' : 'text-gray-500'}`}>{p.hindiName}</div>
+                                  <div className={`text-[11px] font-medium ${isGirlfriend ? 'text-rose-600 dark:text-rose-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                                    {p.hindiName}
+                                  </div>
                                 </div>
                               </div>
                               {isSelected && (
-                                <Check className={`w-4 h-4 shrink-0 mt-1 ${isGirlfriend ? 'text-rose-600' : 'text-black'}`} />
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Selected</span>
+                                  <Check className={`w-4 h-4 shrink-0 ${isGirlfriend ? 'text-rose-600' : isDark ? 'text-white' : 'text-black'}`} />
+                                </div>
                               )}
                             </div>
 
-                            <p className={`text-[11px] leading-relaxed font-light pl-9.5 ${isGirlfriend ? 'text-rose-900/80' : 'text-gray-600'}`}>
+                            <p className={`text-[11px] leading-relaxed font-light pl-9.5 ${isGirlfriend ? 'text-rose-900/80 dark:text-rose-200/80' : 'text-gray-600 dark:text-gray-300'}`}>
                               {p.hindiDescription}
                             </p>
 
-                            {/* Sample Greeting Preview */}
-                            <div className="mt-2.5 pt-2 border-t border-gray-100 flex items-center justify-between text-[11px] pl-9.5">
-                              <span className={`italic truncate max-w-[340px] ${isGirlfriend ? 'text-rose-700 font-medium' : 'text-gray-500'}`}>
+                            {/* Sample Greeting Preview & Save */}
+                            <div className="mt-2.5 pt-2 border-t border-gray-100 dark:border-white/5 flex items-center justify-between text-[11px] pl-9.5">
+                              <span className={`italic truncate max-w-[280px] ${isGirlfriend ? 'text-rose-700 dark:text-rose-300 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
                                 "{p.sampleGreeting}"
                               </span>
-                              {onPreviewGreeting && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onChangeConfig({ persona: p.id });
-                                    onPreviewGreeting(p.sampleGreeting);
-                                  }}
-                                  className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded transition-colors shrink-0 ml-2 cursor-pointer ${
-                                    isGirlfriend
-                                      ? 'bg-rose-100 hover:bg-rose-200 text-rose-800'
-                                      : 'bg-gray-100 hover:bg-gray-200 text-black'
-                                  }`}
-                                  title="Listen to sample greeting"
-                                >
-                                  <Play className={`w-2.5 h-2.5 ${isGirlfriend ? 'fill-rose-700' : 'fill-black'}`} />
-                                  <span>Listen</span>
-                                </button>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {onPreviewGreeting && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateDraft({ persona: p.id });
+                                      onPreviewGreeting(p.sampleGreeting);
+                                    }}
+                                    className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded transition-colors shrink-0 cursor-pointer ${
+                                      isGirlfriend
+                                        ? 'bg-rose-100 hover:bg-rose-200 text-rose-800'
+                                        : 'bg-gray-100 dark:bg-white/10 hover:bg-gray-200 text-black dark:text-white'
+                                    }`}
+                                    title="Listen to sample greeting"
+                                  >
+                                    <Play className={`w-2.5 h-2.5 ${isGirlfriend ? 'fill-rose-700' : 'fill-current'}`} />
+                                    <span>Listen</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         );
@@ -1302,17 +1512,17 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => {
-                            onChangeConfig({
-                              persona: config.persona === 'girlfriend' ? 'friend' : 'girlfriend',
-                            });
+                            const newPersona: LilaPersonaId = draftConfig.persona === 'girlfriend' ? 'friend' : 'girlfriend';
+                            updateDraft({ persona: newPersona });
+                            handleSaveSettings(`Persona set to ${newPersona === 'girlfriend' ? 'Girlfriend' : 'Friend'}!`);
                           }}
                           className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 cursor-pointer shadow-xs ${
-                            config.persona === 'girlfriend'
+                            draftConfig.persona === 'girlfriend'
                               ? 'bg-rose-600 text-white hover:bg-rose-700 ring-2 ring-rose-300'
                               : 'bg-black text-white hover:bg-neutral-800'
                           }`}
                         >
-                          {config.persona === 'girlfriend' ? 'Active 💖' : 'Select'}
+                          {draftConfig.persona === 'girlfriend' ? 'Active 💖' : 'Select & Save'}
                         </button>
                       ) : (
                         <button
@@ -1350,117 +1560,49 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                 </div>
               )}
 
-              {/* TAB 3: WAKE WORD SETTINGS */}
-              {activeTab === 'wake_word' && (
-                <div className="space-y-5">
-                  {/* Always Allow Microphone for Lila Section */}
-                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-xs text-[#1D1D1F] flex items-center gap-1.5">
-                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                            <span>Always Allow Lila for Microphone (हमेशा माइक चालू रखें)</span>
-                          </span>
-                          {config.alwaysAllowMic && micStatus === 'granted' && (
-                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
-                              Pre-Warmed & Allowed
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-gray-500 font-light leading-relaxed">
-                          Keeps the audio pipeline permanently ready to respond to wake words and touch without browser mic permission popups.
-                        </p>
-                      </div>
-
-                      {micStatus !== 'granted' && (
-                        <button
-                          type="button"
-                          id="authorize-always-mic-btn"
-                          onClick={handleAuthorizeAlwaysMic}
-                          className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>Allow Microphone</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Wake Word Selector */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <Radio className="w-3.5 h-3.5 text-gray-600" />
-                        <span>Wake Word Activation</span>
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500">Wake Word Listening</span>
-                        <input
-                          type="checkbox"
-                          checked={config.wakeWordEnabled}
-                          onChange={(e) => onChangeConfig({ wakeWordEnabled: e.target.checked })}
-                          className="w-4 h-4 accent-black rounded cursor-pointer"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {LILA_WAKE_WORDS.map((w) => {
-                        const isSelected = config.wakeWord === w.id;
-                        return (
-                          <button
-                            key={w.id}
-                            id={`wake-word-option-${w.id}`}
-                            onClick={() => onChangeConfig({ wakeWord: w.id, wakeWordEnabled: true })}
-                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                              !config.wakeWordEnabled
-                                ? 'opacity-40 cursor-not-allowed bg-gray-50 border-gray-200'
-                                : isSelected
-                                ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
-                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="font-semibold text-xs">{w.label}</span>
-                              {isSelected && <Check className="w-3.5 h-3.5 text-black" />}
-                            </div>
-                            <p className="text-[11px] text-gray-500 font-light">{w.hindiLabel}</p>
-                            <div className="mt-2 text-[10px] font-mono text-gray-400">
-                              Keywords: {w.phrases.slice(0, 3).join(', ')}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 4: VOICE & PITCH SETTINGS */}
+              {/* TAB 3: VOICE & PITCH SETTINGS (With Save Button) */}
               {activeTab === 'voice' && (
                 <div className="space-y-6">
                   {/* Voice Model Selector */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <Volume2 className="w-3.5 h-3.5 text-gray-600" />
-                        <span>Voice Model</span>
-                      </label>
-                      <span className="text-xs text-black font-semibold">{config.voice}</span>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                          <Volume2 className="w-3.5 h-3.5 text-gray-600" />
+                          <span>Voice Model Selection (आवाज़ चुनें)</span>
+                        </label>
+                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-light">
+                          Current Voice: <span className="font-semibold text-zinc-900 dark:text-white">{draftConfig.voice}</span>
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        id="save-voice-model-btn"
+                        onClick={() => handleSaveSettings(`Voice model "${draftConfig.voice}" saved!`)}
+                        className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save Voice</span>
+                      </button>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {LILA_VOICE_OPTIONS.map((v) => {
-                        const isSelected = config.voice === v.id;
+                        const isSelected = draftConfig.voice === v.id;
                         return (
                           <button
                             key={v.id}
                             id={`voice-option-${v.id}`}
-                            onClick={() => onChangeConfig({ voice: v.id })}
+                            type="button"
+                            onClick={() => updateDraft({ voice: v.id })}
                             className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
                               isSelected
-                                ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                                ? isDark
+                                  ? 'bg-white/10 border-white text-white ring-2 ring-white/20 shadow-md'
+                                  : 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                                : isDark
+                                ? 'bg-white/[0.02] border-white/[0.08] text-gray-300 hover:bg-white/[0.05]'
                                 : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
                             }`}
                           >
@@ -1479,9 +1621,11 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                                   </span>
                                 )}
                               </span>
-                              {isSelected && <Check className="w-3.5 h-3.5 text-black" />}
+                              {isSelected && <Check className={`w-3.5 h-3.5 ${isDark ? 'text-white' : 'text-black'}`} />}
                             </div>
-                            <p className="text-[11px] text-gray-500 leading-snug font-light">{v.vibe}</p>
+                            <p className={`text-[11px] leading-snug font-light ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+                              {v.vibe}
+                            </p>
                           </button>
                         );
                       })}
@@ -1489,11 +1633,11 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                   </div>
 
                   {/* Voice Pitch Adjuster Slider */}
-                  <div id="lila-pitch-adjuster-section" className="space-y-3 pt-4 border-t border-gray-200/80">
+                  <div id="lila-pitch-adjuster-section" className="space-y-3 pt-4 border-t border-gray-200/80 dark:border-white/10">
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
                         <Sliders className="w-3.5 h-3.5 text-gray-600" />
-                        <span>Voice Pitch Adjuster</span>
+                        <span>Voice Pitch Adjuster (पिच एडजस्टर)</span>
                       </label>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-black text-white">
@@ -1505,17 +1649,18 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                       </div>
                     </div>
 
-                    <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3.5">
+                    <div className="p-4 rounded-2xl bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/[0.08] shadow-sm space-y-3.5">
                       <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2 text-[#1D1D1F] font-medium">
+                        <div className="flex items-center gap-2 text-[#1D1D1F] dark:text-zinc-200 font-medium">
                           <Music2 className="w-3.5 h-3.5 text-pink-600" />
                           <span>{getPitchDescription(currentPitch)}</span>
                         </div>
                         {currentPitch !== LILA_PITCH_CONFIG.default && (
                           <button
                             id="lila-reset-pitch-btn"
+                            type="button"
                             onClick={handleResetPitch}
-                            className="text-[11px] text-gray-400 hover:text-black flex items-center gap-1 transition-colors cursor-pointer"
+                            className="text-[11px] text-gray-400 hover:text-black dark:hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
                             title="Reset to default pitch"
                           >
                             <RotateCcw className="w-3 h-3" />
@@ -1534,13 +1679,13 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                           value={currentPitch}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value);
-                            onChangeConfig({ pitch: val });
+                            updateDraft({ pitch: val });
                           }}
                           className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black transition-all"
                         />
                         <div className="flex justify-between text-[10px] text-gray-400 font-mono">
                           <span>Deep ({LILA_PITCH_CONFIG.min}x)</span>
-                          <span className="text-black font-semibold">
+                          <span className="text-black dark:text-white font-semibold">
                             Default ({LILA_PITCH_CONFIG.default}x)
                           </span>
                           <span>High ({LILA_PITCH_CONFIG.max}x)</span>
@@ -1548,7 +1693,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                       </div>
 
                       {/* Quick Pitch Presets */}
-                      <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center gap-1.5">
+                      <div className="pt-2 border-t border-gray-100 dark:border-white/5 flex flex-wrap items-center gap-1.5">
                         <span className="text-[10px] uppercase font-bold text-gray-400 mr-1">Presets:</span>
                         {LILA_PITCH_CONFIG.presets.map((preset) => {
                           const isActive = Math.abs(currentPitch - preset.value) < 0.02;
@@ -1556,14 +1701,15 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                             <button
                               key={preset.label}
                               id={`lila-pitch-preset-${preset.value}`}
+                              type="button"
                               onClick={() => {
-                                onChangeConfig({ pitch: preset.value });
+                                updateDraft({ pitch: preset.value });
                                 previewPitchTone(preset.value);
                               }}
                               className={`px-2.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
                                 isActive
-                                  ? 'bg-black text-white font-semibold shadow-xs'
-                                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700 font-normal'
+                                  ? 'bg-black dark:bg-white text-white dark:text-black font-semibold shadow-xs'
+                                  : 'bg-gray-100 dark:bg-white/10 hover:bg-gray-200 text-gray-700 dark:text-gray-300 font-normal'
                               }`}
                             >
                               <span>{preset.label}</span>
@@ -1576,18 +1722,19 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                       <div className="pt-2 flex items-center justify-end">
                         <button
                           id="lila-preview-pitch-chime-btn"
+                          type="button"
                           onClick={handlePreviewTone}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-xs font-medium text-[#1D1D1F] transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 text-xs font-medium text-[#1D1D1F] dark:text-white transition-colors cursor-pointer"
                         >
-                          <Play className="w-3 h-3 fill-black text-black" />
+                          <Play className="w-3 h-3 fill-current text-current" />
                           <span>Preview Pitch Tone</span>
                         </button>
                       </div>
                     </div>
                   </div>
 
-                  {/* Ring Visualizer Animation Style Selector */}
-                  <div id="lila-visualizer-style-section" className="space-y-3 pt-4 border-t border-gray-200/80">
+                  {/* Ring Visualizer Style Selector */}
+                  <div id="lila-visualizer-style-section" className="space-y-3 pt-4 border-t border-gray-200/80 dark:border-white/10">
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
                         <Layers className="w-3.5 h-3.5 text-gray-600" />
@@ -1627,13 +1774,13 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                           tag: 'Spectrum Pins',
                         },
                       ].map((style) => {
-                        const isSelected = (config.ringAnimationStyle || 'golden_spirals') === style.id;
+                        const isSelected = (draftConfig.ringAnimationStyle || 'golden_spirals') === style.id;
                         return (
                           <button
                             key={style.id}
                             type="button"
                             id={`visualizer-style-${style.id}`}
-                            onClick={() => onChangeConfig({ ringAnimationStyle: style.id as any })}
+                            onClick={() => updateDraft({ ringAnimationStyle: style.id as any })}
                             className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
                               isSelected
                                 ? isDark
@@ -1676,40 +1823,143 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                 </div>
               )}
 
-              {/* TAB 5: ENGINE & PROTOCOL SETTINGS */}
+              {/* TAB 4: ENGINE & AI MODEL SETTINGS (With Save Button) */}
               {activeTab === 'engine' && (
-                <div className="space-y-5">
+                <div className="space-y-6">
+                  {/* AI Model Intelligence Selection */}
                   <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                          <Brain className="w-3.5 h-3.5 text-rose-500" />
+                          <span>AI Intelligence Model (AI मॉडल चयन)</span>
+                        </label>
+                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                          Select the Gemini AI model powering Lila's conversational responses.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        id="save-ai-model-btn"
+                        onClick={() => handleSaveSettings(`AI Model & Engine preferences saved!`)}
+                        className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save Engine</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {[
+                        {
+                          id: 'gemini-2.5-flash',
+                          name: 'Gemini 2.5 Flash',
+                          badge: 'Realtime Fast ⚡',
+                          desc: 'Ultra-low latency streaming, snappy conversations, and sharp Hindi responses.',
+                          bestFor: 'Default Live Voice',
+                        },
+                        {
+                          id: 'gemini-3.7-flash',
+                          name: 'Gemini 3.7 Flash',
+                          badge: 'Hybrid Reasoning 🧠',
+                          desc: 'Enhanced reasoning, witty humor, nuance, and grounded search intelligence.',
+                          bestFor: 'Smartest Logic',
+                        },
+                        {
+                          id: 'gemini-2.5-pro',
+                          name: 'Gemini 2.5 Pro',
+                          badge: 'Deep Knowledge 🔬',
+                          desc: 'Complex multi-step coding, deep problem-solving, and expansive memory.',
+                          bestFor: 'Deep Analysis',
+                        },
+                      ].map((model) => {
+                        const isSelected = (draftConfig.aiModel || 'gemini-2.5-flash') === model.id;
+                        return (
+                          <button
+                            key={model.id}
+                            type="button"
+                            id={`ai-model-select-${model.id}`}
+                            onClick={() => updateDraft({ aiModel: model.id as any })}
+                            className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                              isSelected
+                                ? isDark
+                                  ? 'bg-white/10 border-white text-white ring-2 ring-white/20 shadow-md'
+                                  : 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                                : isDark
+                                ? 'bg-white/[0.02] border-white/[0.08] text-gray-300 hover:bg-white/[0.05]'
+                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="font-semibold text-xs text-black dark:text-white">{model.name}</span>
+                                {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
+                              </div>
+                              <span className="text-[9px] px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-semibold border border-rose-200 dark:border-rose-800/40 inline-block mb-1.5">
+                                {model.badge}
+                              </span>
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug font-light">
+                                {model.desc}
+                              </p>
+                            </div>
+                            <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 mt-2 block">
+                              Best: {model.bestFor}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Protocol selection */}
+                  <div className="space-y-3 pt-4 border-t border-gray-200/80 dark:border-white/10">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
                       <Cpu className="w-3.5 h-3.5 text-gray-600" />
-                      <span>Connection Protocol</span>
+                      <span>Connection Protocol (कनेक्शन प्रोटोकॉल)</span>
                     </label>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <button
-                        onClick={() => onChangeConfig({ connectionMode: 'live_websocket' })}
+                        type="button"
+                        onClick={() => updateDraft({ connectionMode: 'live_websocket' })}
                         className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                          config.connectionMode === 'live_websocket'
-                            ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                          draftConfig.connectionMode === 'live_websocket'
+                            ? isDark
+                              ? 'bg-white/10 border-white text-white ring-2 ring-white/20 shadow-md'
+                              : 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                            : isDark
+                            ? 'bg-white/[0.02] border-white/[0.08] text-gray-300'
                             : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
                         }`}
                       >
-                        <div className="font-semibold text-xs text-black mb-0.5">Gemini Live Stream</div>
-                        <div className="text-[11px] text-gray-500 font-light">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="font-semibold text-xs text-black dark:text-white">Gemini Live Stream</span>
+                          {draftConfig.connectionMode === 'live_websocket' && <Check className="w-3.5 h-3.5" />}
+                        </div>
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400 font-light">
                           Real-time bidirectional 24kHz PCM16 stream with live interruptions
                         </div>
                       </button>
 
                       <button
-                        onClick={() => onChangeConfig({ connectionMode: 'turn_based' })}
+                        type="button"
+                        onClick={() => updateDraft({ connectionMode: 'turn_based' })}
                         className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                          config.connectionMode === 'turn_based'
-                            ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                          draftConfig.connectionMode === 'turn_based'
+                            ? isDark
+                              ? 'bg-white/10 border-white text-white ring-2 ring-white/20 shadow-md'
+                              : 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                            : isDark
+                            ? 'bg-white/[0.02] border-white/[0.08] text-gray-300'
                             : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
                         }`}
                       >
-                        <div className="font-semibold text-xs text-black mb-0.5">Smart Voice Turn</div>
-                        <div className="text-[11px] text-gray-500 font-light">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="font-semibold text-xs text-black dark:text-white">Smart Voice Turn</span>
+                          {draftConfig.connectionMode === 'turn_based' && <Check className="w-3.5 h-3.5" />}
+                        </div>
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400 font-light">
                           Gemini 3.7 Flash + Grounding + 3.1 Flash TTS Synthesis
                         </div>
                       </button>
@@ -1717,25 +1967,169 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                   </div>
                 </div>
               )}
+
+              {/* TAB 5: WAKE WORD & MIC */}
+              {activeTab === 'wake_word' && (
+                <div className="space-y-5">
+                  {/* Always Allow Microphone for Lila Section */}
+                  <div className="p-4 rounded-2xl bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/[0.08] shadow-sm space-y-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-xs text-[#1D1D1F] dark:text-white flex items-center gap-1.5">
+                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                            <span>Always Allow Lila for Microphone (हमेशा माइक चालू रखें)</span>
+                          </span>
+                          {draftConfig.alwaysAllowMic && micStatus === 'granted' && (
+                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
+                              Pre-Warmed & Allowed
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-light leading-relaxed">
+                          Keeps the audio pipeline permanently ready to respond to wake words and touch without browser mic permission popups.
+                        </p>
+                      </div>
+
+                      {micStatus !== 'granted' && (
+                        <button
+                          type="button"
+                          id="authorize-always-mic-btn"
+                          onClick={handleAuthorizeAlwaysMic}
+                          className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Allow Microphone</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Wake Word Selector */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Radio className="w-3.5 h-3.5 text-gray-600" />
+                        <span>Wake Word Activation (वेक वर्ड सक्रियण)</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Wake Word Listening</span>
+                        <input
+                          type="checkbox"
+                          checked={draftConfig.wakeWordEnabled}
+                          onChange={(e) => updateDraft({ wakeWordEnabled: e.target.checked })}
+                          className="w-4 h-4 accent-black rounded cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {LILA_WAKE_WORDS.map((w) => {
+                        const isSelected = draftConfig.wakeWord === w.id;
+                        return (
+                          <button
+                            key={w.id}
+                            type="button"
+                            id={`wake-word-option-${w.id}`}
+                            onClick={() => updateDraft({ wakeWord: w.id, wakeWordEnabled: true })}
+                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                              !draftConfig.wakeWordEnabled
+                                ? 'opacity-40 cursor-not-allowed bg-gray-50 dark:bg-white/[0.01] border-gray-200 dark:border-white/5'
+                                : isSelected
+                                ? isDark
+                                  ? 'bg-white/10 border-white text-white ring-2 ring-white/20 shadow-sm'
+                                  : 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                                : isDark
+                                ? 'bg-white/[0.02] border-white/[0.08] text-gray-300 hover:bg-white/[0.05]'
+                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold text-xs">{w.label}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5" />}
+                            </div>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 font-light">{w.hindiLabel}</p>
+                            <div className="mt-2 text-[10px] font-mono text-gray-400">
+                              Keywords: {w.phrases.slice(0, 3).join(', ')}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Footer */}
+            {/* Footer with Prominent Save Button */}
             <div
-              className={`p-4 border-t flex justify-end transition-colors ${
+              className={`p-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 transition-colors ${
                 isDark ? 'bg-[#14161C] border-[#22252D]' : 'bg-white border-gray-100'
               }`}
             >
-              <button
-                id="lila-done-settings-btn"
-                onClick={onClose}
-                className={`px-6 py-2 rounded-full text-xs font-semibold shadow-sm transition-all cursor-pointer ${
-                  isDark
-                    ? 'bg-white text-black hover:bg-gray-200'
-                    : 'bg-black text-white hover:bg-neutral-800'
-                }`}
-              >
-                Done
-              </button>
+              <div className="flex items-center gap-2 text-xs">
+                {hasUnsavedChanges ? (
+                  <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-medium">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>You have unsaved changes</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>All changes saved</span>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  id="lila-cancel-settings-btn"
+                  onClick={() => {
+                    setDraftConfig(config);
+                    onClose();
+                  }}
+                  className={`px-4 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                    isDark ? 'text-zinc-400 hover:text-white hover:bg-white/10' : 'text-zinc-600 hover:text-black hover:bg-zinc-100'
+                  }`}
+                >
+                  Cancel
+                </button>
+
+                {/* Primary Save Button */}
+                <button
+                  type="button"
+                  id="lila-save-all-settings-btn"
+                  onClick={() => handleSaveSettings()}
+                  className={`px-5 py-2 rounded-full text-xs font-semibold shadow-sm transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                    hasUnsavedChanges
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400/30'
+                      : 'bg-emerald-700 text-white hover:bg-emerald-800'
+                  }`}
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save Settings</span>
+                </button>
+
+                {/* Done Button */}
+                <button
+                  id="lila-done-settings-btn"
+                  type="button"
+                  onClick={() => {
+                    if (hasUnsavedChanges) {
+                      handleSaveSettings();
+                    }
+                    onClose();
+                  }}
+                  className={`px-5 py-2 rounded-full text-xs font-semibold shadow-sm transition-all cursor-pointer ${
+                    isDark
+                      ? 'bg-white text-black hover:bg-gray-200'
+                      : 'bg-black text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>

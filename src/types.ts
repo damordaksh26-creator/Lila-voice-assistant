@@ -154,6 +154,7 @@ export interface VoiceSettingsConfig {
   voice: VoiceName;
   pitch: number; // 0.70 to 1.35 multiplier
   persona: LilaPersonaId;
+  aiModel?: 'gemini-2.5-flash' | 'gemini-3.7-flash' | 'gemini-2.5-pro';
   wakeWordEnabled: boolean;
   wakeWord: WakeWordOption;
   wakeWordChime: boolean;
