@@ -67,6 +67,7 @@ const DEFAULT_SETTINGS: VoiceSettingsConfig = {
   showSubtitles: true,
   connectionMode: 'live_websocket',
   secretGirlfriendUnlocked: false,
+  ringAnimationStyle: 'golden_spirals',
 };
 
 const loadInitialSettings = (): VoiceSettingsConfig => {
@@ -1532,6 +1533,7 @@ export default function App() {
           wakeWordLabel={activeWakeObj.label}
           isWakeWordDetected={isWakeWordDetected}
           theme={theme}
+          ringAnimationStyle={settings.ringAnimationStyle}
         />
       </main>
 

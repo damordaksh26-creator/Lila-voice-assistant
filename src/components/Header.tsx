@@ -88,30 +88,30 @@ export const Header: React.FC<HeaderProps> = React.memo(({
   return (
     <header
       id="lila-header"
-      className={`w-full backdrop-blur-md border-b sticky top-0 z-30 transition-colors duration-300 ${
+      className={`w-full backdrop-blur-xl border-b sticky top-0 z-30 transition-all duration-300 ${
         isDark
-          ? 'bg-[#0F1117]/85 border-[#22252D] text-white'
-          : 'bg-white/85 border-gray-100 text-[#1D1D1F]'
+          ? 'bg-[#0A0A0D]/85 border-white/[0.08] text-white'
+          : 'bg-white/85 border-black/[0.06] text-[#18181B]'
       }`}
     >
-      <div className="max-w-5xl mx-auto px-4 sm:px-8 py-3.5 flex items-center justify-between">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-2">
         {/* Brand Identity with Secret Tap Trigger */}
-        <div className="flex items-center gap-3 relative">
+        <div className="flex items-center gap-2.5 relative shrink-0">
           <motion.button
             id="lila-brand-logo-btn"
             onClick={handleLogoClick}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.92 }}
-            className="relative cursor-pointer focus:outline-none group"
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.94 }}
+            className="relative cursor-pointer focus:outline-none group p-0.5"
             title={logoClicks > 0 ? `${5 - logoClicks} taps left to Secret Girlfriend Mode!` : 'Lila Voice AI (Tap 5x for secret)'}
           >
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm transition-all duration-300 ${
                 isGirlfriendMode
-                  ? 'bg-rose-500 text-white ring-2 ring-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.4)]'
+                  ? 'bg-rose-500 text-white ring-2 ring-rose-300 shadow-[0_0_14px_rgba(244,63,94,0.45)]'
                   : isDark
-                  ? 'bg-white text-black'
-                  : 'bg-black text-white'
+                  ? 'bg-gradient-to-tr from-white to-zinc-200 text-black shadow-[0_2px_10px_rgba(255,255,255,0.12)]'
+                  : 'bg-gradient-to-tr from-zinc-950 to-zinc-800 text-white shadow-[0_2px_10px_rgba(0,0,0,0.15)]'
               }`}
             >
               {isGirlfriendMode ? (
@@ -125,7 +125,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
               )}
             </div>
             {isLive && (
-              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white animate-pulse" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-black animate-pulse" />
             )}
           </motion.button>
 
@@ -136,7 +136,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
                 initial={{ opacity: 0, y: 10, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 5, scale: 0.9 }}
-                className="absolute top-11 left-0 z-50 whitespace-nowrap px-3 py-1.5 rounded-xl bg-rose-600 text-white text-[11px] font-semibold shadow-lg flex items-center gap-1.5 border border-rose-400"
+                className="absolute top-11 left-0 z-50 whitespace-nowrap px-3 py-1.5 rounded-full bg-rose-600 text-white text-[11px] font-semibold shadow-xl flex items-center gap-1.5 border border-rose-400"
               >
                 <Heart className="w-3 h-3 fill-white animate-bounce" />
                 <span>Tap {5 - logoClicks} more times for Secret Mode!</span>
@@ -146,8 +146,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
 
           <div className="flex items-center gap-2">
             <span
-              className={`text-xl font-medium tracking-tight ${
-                isDark ? 'text-white' : 'text-[#1D1D1F]'
+              className={`text-lg sm:text-xl font-bold tracking-tight ${
+                isDark ? 'text-white' : 'text-zinc-900'
               }`}
             >
               Lila
@@ -156,14 +156,14 @@ export const Header: React.FC<HeaderProps> = React.memo(({
               <motion.span
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wider text-rose-600 border border-rose-200 dark:border-rose-800/60 px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 shadow-2xs"
+                className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide text-rose-600 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800/60 px-2.5 py-0.5 rounded-full bg-rose-50/80 dark:bg-rose-950/60 shadow-2xs"
               >
                 <Heart className="w-2.5 h-2.5 fill-rose-500 text-rose-500" />
                 <span>Girlfriend Active</span>
               </motion.span>
             ) : (
               <span
-                className={`hidden sm:inline-flex text-[10px] font-semibold uppercase tracking-widest border px-2 py-0.5 rounded-full transition-colors ${
+                className={`hidden sm:inline-flex text-[10px] font-semibold uppercase tracking-wider border px-2 py-0.5 rounded-full transition-colors ${
                   isDark
                     ? 'text-emerald-400 border-emerald-800/80 bg-emerald-950/40'
                     : 'text-emerald-800 border-emerald-200/80 bg-emerald-50/80'
@@ -185,8 +185,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             onClick={onOpenSettings}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
               isDark
-                ? 'bg-[#181A20] border-[#2B2F3A] text-gray-200 hover:border-gray-600 hover:bg-[#20242E]'
-                : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-white text-gray-700 hover:text-black'
+                ? 'bg-zinc-900/90 border-white/[0.08] text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800'
+                : 'bg-zinc-50/90 border-zinc-200/80 hover:border-zinc-300 hover:bg-white text-zinc-700 hover:text-black'
             }`}
             title="Change Lila Persona"
           >
@@ -200,7 +200,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             </span>
             <span
               className={`hidden md:inline text-[10px] ${
-                isDark ? 'text-gray-400' : 'text-gray-400'
+                isDark ? 'text-zinc-400' : 'text-zinc-400'
               }`}
             >
               ({persona === 'girlfriend' ? 'Sweet & Caring' : activePersonaObj.tag.split(' ')[0]})
@@ -243,12 +243,12 @@ export const Header: React.FC<HeaderProps> = React.memo(({
                 onClick={onRequestAlwaysAllowMic}
                 className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
                   isDark
-                    ? 'border-[#2B2F3A] bg-[#181A20] hover:bg-[#20242E] text-gray-300'
-                    : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700'
+                    ? 'border-white/[0.08] bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300'
+                    : 'border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700'
                 }`}
                 title="Always allow microphone access"
               >
-                <Mic className="w-3.5 h-3.5 text-gray-400" />
+                <Mic className="w-3.5 h-3.5 text-zinc-400" />
                 <span className="text-[10px] font-semibold">Always Allow Mic</span>
               </button>
             )
@@ -261,17 +261,17 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
               wakeWordEnabled
                 ? isDark
-                  ? 'bg-[#181A20] border-[#2B2F3A] text-gray-200 hover:border-gray-600'
-                  : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                  ? 'bg-zinc-900/90 border-white/[0.08] text-zinc-200 hover:border-zinc-500'
+                  : 'bg-white border-zinc-200 text-zinc-700 hover:border-zinc-300'
                 : isDark
-                ? 'bg-[#14161C] border-[#22252D] text-gray-500'
-                : 'bg-gray-100 border-gray-200 text-gray-400'
+                ? 'bg-zinc-900/50 border-white/[0.05] text-zinc-500'
+                : 'bg-zinc-100/80 border-zinc-200 text-zinc-400'
             }`}
             title="Wake word standby listener"
           >
             <Mic
               className={`w-3.5 h-3.5 ${
-                wakeWordEnabled ? (isDark ? 'text-emerald-400' : 'text-black') : 'text-gray-400'
+                wakeWordEnabled ? (isDark ? 'text-emerald-400' : 'text-zinc-900') : 'text-zinc-400'
               }`}
             />
             <span className="text-[11px]">
@@ -288,12 +288,12 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             onClick={onOpenSettings}
             className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium shadow-2xs transition-all cursor-pointer ${
               isDark
-                ? 'bg-[#181A20] border-[#2B2F3A] text-gray-300 hover:border-gray-600'
-                : 'bg-white border-gray-200 hover:border-gray-300 text-gray-600 hover:text-black'
+                ? 'bg-zinc-900/90 border-white/[0.08] text-zinc-300 hover:border-zinc-500'
+                : 'bg-white border-zinc-200 hover:border-zinc-300 text-zinc-600 hover:text-black'
             }`}
             title="Configure Voice & Pitch"
           >
-            <Radio className={`w-3 h-3 ${isLive ? 'text-emerald-500 animate-pulse' : 'text-gray-400'}`} />
+            <Radio className={`w-3 h-3 ${isLive ? 'text-emerald-500 animate-pulse' : 'text-zinc-400'}`} />
             <span className="font-semibold text-[11px]">{currentVoice}</span>
             <span
               className={`text-[10px] font-mono font-semibold px-1 py-0.2 rounded border ${
@@ -314,8 +314,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             onClick={onToggleTheme}
             className={`p-2.5 rounded-full border transition-all shadow-2xs cursor-pointer ${
               isDark
-                ? 'bg-[#181A20] border-[#2B2F3A] text-amber-300 hover:bg-[#222632] hover:border-amber-400/50'
-                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-black'
+                ? 'bg-zinc-900/90 border-white/[0.08] text-amber-300 hover:bg-zinc-800 hover:border-amber-400/50'
+                : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-black'
             }`}
             title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           >
@@ -338,7 +338,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
                   exit={{ rotate: -90, scale: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <Moon className="w-4 h-4 text-slate-700" />
+                  <Moon className="w-4 h-4 text-zinc-700" />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -352,8 +352,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             onClick={onOpenTranscripts}
             className={`relative p-2.5 rounded-full border transition-all shadow-2xs cursor-pointer ${
               isDark
-                ? 'bg-[#181A20] border-[#2B2F3A] text-gray-300 hover:bg-[#222632] hover:text-white'
-                : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600 hover:text-black'
+                ? 'bg-zinc-900/90 border-white/[0.08] text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-600 hover:text-black'
             }`}
             title="Conversation History"
           >
@@ -377,8 +377,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             onClick={onOpenSettings}
             className={`p-2.5 rounded-full border transition-all shadow-2xs cursor-pointer ${
               isDark
-                ? 'bg-[#181A20] border-[#2B2F3A] text-gray-300 hover:bg-[#222632] hover:text-white'
-                : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600 hover:text-black'
+                ? 'bg-zinc-900/90 border-white/[0.08] text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-600 hover:text-black'
             }`}
             title="Voice & Persona Settings"
           >

@@ -400,24 +400,44 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
             initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
-            className="w-full max-w-2xl bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] text-[#1D1D1F]"
+            className={`w-full max-w-2xl border rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] transition-all backdrop-blur-xl ${
+              isDark
+                ? 'bg-[#101217] border-white/[0.08] text-zinc-100 shadow-black/60'
+                : 'bg-white border-zinc-200 text-zinc-900 shadow-xl'
+            }`}
           >
             {/* Header */}
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-white">
+            <div
+              className={`p-5 border-b flex items-center justify-between transition-colors ${
+                isDark ? 'bg-[#101217] border-white/[0.08]' : 'bg-white border-zinc-100'
+              }`}
+            >
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white shadow-sm">
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm ${
+                    isDark ? 'bg-white text-black' : 'bg-black text-white'
+                  }`}
+                >
                   <Settings className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-[#1D1D1F]">Preferences & Full Device Control (v3)</h3>
-                  <p className="text-xs text-gray-400 font-light">Calling · Calculator · MediaSession · Notepad · Voice</p>
+                  <h3 className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                    Preferences & Full Device Control (v3)
+                  </h3>
+                  <p className={`text-xs font-light ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                    Calling · Calculator · MediaSession · Notepad · Voice
+                  </p>
                 </div>
               </div>
 
               <button
                 id="lila-close-settings-modal-btn"
                 onClick={onClose}
-                className="p-2 rounded-full text-gray-400 hover:text-black hover:bg-gray-100 transition-colors cursor-pointer"
+                className={`p-2 rounded-full transition-colors cursor-pointer ${
+                  isDark
+                    ? 'text-zinc-400 hover:text-white hover:bg-white/10'
+                    : 'text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100'
+                }`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1374,6 +1394,94 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                           <span>Preview Pitch Tone</span>
                         </button>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Ring Visualizer Animation Style Selector */}
+                  <div id="lila-visualizer-style-section" className="space-y-3 pt-4 border-t border-gray-200/80">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-gray-600" />
+                        <span>Voice Orb Visualizer Style</span>
+                      </label>
+                      <span className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded-md ${
+                        isDark ? 'bg-white/10 text-zinc-300' : 'bg-black/5 text-zinc-700'
+                      }`}>
+                        Fluid Canvas 60 FPS
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {[
+                        {
+                          id: 'golden_spirals',
+                          title: 'Fibonacci Golden Spiral',
+                          desc: 'Concentric golden harmonic waves and radiant particle rays',
+                          tag: 'Smooth Harmonic',
+                        },
+                        {
+                          id: 'cosmic_pulse',
+                          title: 'Cosmic Resonant Pulse',
+                          desc: 'Pure luminous glowing aura with organic sound-reactive waves',
+                          tag: 'Organic Aura',
+                        },
+                        {
+                          id: 'quantum_orbit',
+                          title: 'Quantum 3D Orbits',
+                          desc: 'Multi-axis gyroscopic particle rings with orbital velocity',
+                          tag: '3D Gyroscope',
+                        },
+                        {
+                          id: 'soundwave_bars',
+                          title: 'Radial Equalizer Pins',
+                          desc: '48 responsive radial audio bars reactive to voice spectrum',
+                          tag: 'Spectrum Pins',
+                        },
+                      ].map((style) => {
+                        const isSelected = (config.ringAnimationStyle || 'golden_spirals') === style.id;
+                        return (
+                          <button
+                            key={style.id}
+                            type="button"
+                            id={`visualizer-style-${style.id}`}
+                            onClick={() => onChangeConfig({ ringAnimationStyle: style.id as any })}
+                            className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+                              isSelected
+                                ? isDark
+                                  ? 'bg-white/10 border-white text-white ring-2 ring-white/20 shadow-md'
+                                  : 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                                : isDark
+                                ? 'bg-white/[0.03] border-white/[0.08] text-zinc-300 hover:bg-white/[0.06] hover:border-white/20'
+                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold text-xs flex items-center gap-1.5">
+                                {style.title}
+                                <span
+                                  className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
+                                    isSelected
+                                      ? isDark
+                                        ? 'bg-white text-black border-white'
+                                        : 'bg-black text-white border-black'
+                                      : isDark
+                                      ? 'bg-white/10 text-zinc-300 border-white/10'
+                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                  }`}
+                                >
+                                  {style.tag}
+                                </span>
+                              </span>
+                              {isSelected && (
+                                <Check className={`w-3.5 h-3.5 ${isDark ? 'text-white' : 'text-black'}`} />
+                              )}
+                            </div>
+                            <p className={`text-[11px] leading-snug font-light ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+                              {style.desc}
+                            </p>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

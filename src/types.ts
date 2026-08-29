@@ -8,6 +8,14 @@ export type WakeWordOption = 'hey_lila' | 'ok_lila' | 'suno_lila' | 'namaste_lil
 
 export type ThemeMode = 'light' | 'dark';
 
+export type RingAnimationStyle =
+  | 'golden_spirals'
+  | 'cosmic_pulse'
+  | 'quantum_orbit'
+  | 'soundwave_bars'
+  | 'celestial_gyro'
+  | 'supernova_flares';
+
 export interface LilaPersona {
   id: LilaPersonaId;
   name: string;
@@ -155,6 +163,7 @@ export interface VoiceSettingsConfig {
   connectionMode: 'live_websocket' | 'turn_based';
   secretGirlfriendUnlocked?: boolean;
   alwaysAllowMic: boolean;
+  ringAnimationStyle?: RingAnimationStyle;
   preferredNotesApp?: 'google_keep' | 'samsung_notes' | 'notepad';
   hasCompletedOnboarding?: boolean;
   customContacts?: ContactEntry[];
