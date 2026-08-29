@@ -12,6 +12,12 @@ import {
   Brain,
   GraduationCap,
   MessageCircle,
+  Pause,
+  Play,
+  SkipForward,
+  Edit3,
+  Youtube,
+  Volume2,
 } from 'lucide-react';
 import { LilaPersonaId } from '../types';
 
@@ -23,6 +29,34 @@ export interface PromptSuggestion {
 }
 
 export const LILA_PROMPT_SUGGESTIONS: PromptSuggestion[] = [
+  // App Control Direct Triggers
+  {
+    icon: Pause,
+    label: 'Pause YouTube Video',
+    prompt: 'Lila, YouTube video pause kar dijiye please.',
+  },
+  {
+    icon: Youtube,
+    label: 'Play Romantic Song on YouTube',
+    prompt: 'Lila, YouTube par romantic Arijit Singh ke songs chalao.',
+  },
+  {
+    icon: Edit3,
+    label: 'Notepad: Dictate Grocery Note',
+    prompt: 'Lila, Notepad open karke likho: Buy almond milk, bread and fresh fruits.',
+  },
+  {
+    icon: SkipForward,
+    label: 'Next Song on Music Player',
+    prompt: 'Lila, agla gaana play kardo (Next song).',
+  },
+  {
+    icon: Volume2,
+    label: 'Increase Media Volume',
+    prompt: 'Lila, thoda volume badha dijiye (Volume up).',
+  },
+
+  // Secret Girlfriend Prompts
   {
     icon: Heart,
     label: 'Girlfriend: Sweet Romance ❤️',
@@ -41,6 +75,8 @@ export const LILA_PROMPT_SUGGESTIONS: PromptSuggestion[] = [
     prompt: 'Lila babu, mere liye ek super cute sa compliment dijiye na jo mera poora din bana de!',
     personaTarget: 'girlfriend',
   },
+
+  // Regular Conversational Prompts
   {
     icon: MessageCircle,
     label: 'Kya kar rahe he aap?',
@@ -84,12 +120,6 @@ export const LILA_PROMPT_SUGGESTIONS: PromptSuggestion[] = [
     personaTarget: 'mentor',
   },
   {
-    icon: Zap,
-    label: 'Open YouTube',
-    prompt: 'OK Lila, mere liye YouTube website open kar dijiye.',
-    personaTarget: 'assistant',
-  },
-  {
     icon: Coffee,
     label: 'Chai vs Coffee Debate',
     prompt: 'Hey Lila, chai aur coffee mein aapko kaunsi zyada pasand hai? Apna opinion share kijiye.',
@@ -102,4 +132,3 @@ export const LILA_PROMPT_SUGGESTIONS: PromptSuggestion[] = [
     personaTarget: 'assistant',
   },
 ];
-

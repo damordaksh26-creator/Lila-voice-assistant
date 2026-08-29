@@ -13,7 +13,7 @@ interface TranscriptViewProps {
   showSubtitles: boolean;
 }
 
-export const TranscriptView: React.FC<TranscriptViewProps> = ({
+export const TranscriptView: React.FC<TranscriptViewProps> = React.memo(({
   messages,
   isOpen,
   onClose,
@@ -223,5 +223,5 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
       </AnimatePresence>
     </>
   );
-};
+});
 

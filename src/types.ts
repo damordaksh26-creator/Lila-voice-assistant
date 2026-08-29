@@ -6,13 +6,7 @@ export type LilaPersonaId = 'friend' | 'family' | 'counselor' | 'assistant' | 'm
 
 export type WakeWordOption = 'hey_lila' | 'ok_lila' | 'suno_lila' | 'namaste_lila' | 'any';
 
-export type RingAnimationStyle =
-  | 'golden_spirals'
-  | 'cosmic_pulse'
-  | 'quantum_orbit'
-  | 'soundwave_bars'
-  | 'celestial_gyro'
-  | 'supernova_flares';
+export type ThemeMode = 'light' | 'dark';
 
 export interface LilaPersona {
   id: LilaPersonaId;
@@ -56,7 +50,97 @@ export interface TranscriptMessage {
   sources?: Array<{ title: string; uri: string }>;
 }
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type AppControlAction =
+  | 'call'
+  | 'hang_up'
+  | 'calculate'
+  | 'play'
+  | 'pause'
+  | 'resume'
+  | 'next'
+  | 'previous'
+  | 'volume_up'
+  | 'volume_down'
+  | 'open'
+  | 'search'
+  | 'play_media'
+  | 'type_text'
+  | 'set_alarm'
+  | 'set_timer'
+  | 'toggle_setting';
+
+export type SupportedTargetApp =
+  | 'phone'
+  | 'calculator'
+  | 'notepad'
+  | 'keep'
+  | 'samsung_notes'
+  | 'youtube'
+  | 'spotify'
+  | 'whatsapp'
+  | 'chrome'
+  | 'camera'
+  | 'clock'
+  | 'settings'
+  | 'maps'
+  | 'music'
+  | string;
+
+export interface ContactEntry {
+  id: string;
+  name: string;
+  hindiName?: string;
+  relationship?: string;
+  phoneNumber: string;
+  avatarColor?: string;
+}
+
+export interface AppControlCommand {
+  intent: 'app_control';
+  action: AppControlAction;
+  target_app: SupportedTargetApp;
+  query?: string;
+  text_to_type?: string;
+  note_app?: 'google_keep' | 'samsung_notes' | 'notepad' | 'stock_notes';
+  phone_number?: string;
+  contact_name?: string;
+  math_expression?: string;
+  calculation_result?: string;
+  setting_name?: 'wifi' | 'bluetooth' | 'flashlight' | 'volume';
+  setting_value?: 'on' | 'off' | 'toggle' | number | string;
+  timestamp?: number;
+}
+
+export type DevicePermissionType =
+  | 'microphone'
+  | 'phone'
+  | 'contacts'
+  | 'notifications'
+  | 'accessibility';
+
+export interface DevicePermissionInfo {
+  id: DevicePermissionType;
+  title: string;
+  hindiTitle: string;
+  whyNeeded: string;
+  hindiWhy: string;
+  category: 'runtime' | 'special_settings';
+  granted: boolean;
+  settingsAction?: string;
+}
+
+export interface NativeBridgeStatus {
+  isAvailable: boolean;
+  bridgeType: 'native_webview' | 'browser_simulated' | 'none';
+  micGranted: boolean;
+  phoneCallGranted: boolean;
+  contactsGranted: boolean;
+  notificationAccessGranted: boolean;
+  accessibilityAccessGranted: boolean;
+  preferredNotesApp: 'google_keep' | 'samsung_notes' | 'notepad';
+  lastCommandExecuted?: AppControlCommand;
+  commandHistory: AppControlCommand[];
+}
 
 export interface VoiceSettingsConfig {
   voice: VoiceName;
@@ -69,10 +153,13 @@ export interface VoiceSettingsConfig {
   soundEffects: boolean;
   showSubtitles: boolean;
   connectionMode: 'live_websocket' | 'turn_based';
-  secretGirlfriendEnabled?: boolean;
+  secretGirlfriendUnlocked?: boolean;
   alwaysAllowMic: boolean;
-  ringAnimation: RingAnimationStyle;
-  theme: ThemeMode;
+  preferredNotesApp?: 'google_keep' | 'samsung_notes' | 'notepad';
+  hasCompletedOnboarding?: boolean;
+  customContacts?: ContactEntry[];
+  preferDirectDial?: boolean;
+  nativeBridgeSimulation?: boolean;
 }
 
 

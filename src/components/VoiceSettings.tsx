@@ -10,6 +10,7 @@ import {
   Cpu,
   Sliders,
   Play,
+  Pause,
   RotateCcw,
   Music2,
   Heart,
@@ -28,22 +29,41 @@ import {
   CheckCircle2,
   AlertCircle,
   HelpCircle,
-  Activity,
-  Compass,
-  ChevronDown,
-  Orbit,
-  CircleDot,
-  Sun,
-  Moon,
-  Monitor,
+  Smartphone,
+  Download,
+  Globe,
+  Copy,
+  Code2,
+  ExternalLink,
+  Edit3,
+  Youtube,
+  Music,
+  FileText,
+  SkipForward,
+  SkipBack,
+  Terminal,
+  PhoneCall,
+  Calculator,
+  Users,
+  Plus,
+  Trash2,
+  Camera,
+  Layers,
+  ChevronRight,
 } from 'lucide-react';
-import { LilaPersonaId, VoiceName, VoiceSettingsConfig, WakeWordOption, RingAnimationStyle, ThemeMode } from '../types';
+import {
+  LilaPersonaId,
+  VoiceName,
+  VoiceSettingsConfig,
+  WakeWordOption,
+  SupportedTargetApp,
+  ContactEntry,
+} from '../types';
 import {
   LILA_VOICE_OPTIONS,
   LILA_PITCH_CONFIG,
   LILA_PERSONAS,
   LILA_WAKE_WORDS,
-  LILA_RING_ANIMATIONS,
   getPitchDescription,
 } from '../lila';
 import {
@@ -52,6 +72,19 @@ import {
   getMicrophonePermissionStatus,
   requestMicrophoneAccess,
 } from '../utils/audio';
+import {
+  getAppBridgeStatus,
+  subscribeToAppBridge,
+  executeAppControlCommand,
+  requestPhonePermission,
+  requestContactsPermission,
+  requestNotificationAccessSettings,
+  requestAccessibilitySettings,
+  DEFAULT_CONTACTS,
+  evaluateMathExpression,
+} from '../utils/appBridge';
+import { ANDROID_COMPANION_FILES } from '../utils/nativeCompanionCode';
+import { DeviceOnboardingModal } from './DeviceOnboardingModal';
 
 interface VoiceSettingsProps {
   isOpen: boolean;
@@ -59,6 +92,7 @@ interface VoiceSettingsProps {
   config: VoiceSettingsConfig;
   onChangeConfig: (newConfig: Partial<VoiceSettingsConfig>) => void;
   onPreviewGreeting?: (greetingText: string) => void;
+  theme?: 'light' | 'dark';
 }
 
 const PERSONA_ICONS: Record<LilaPersonaId, any> = {
@@ -70,172 +104,90 @@ const PERSONA_ICONS: Record<LilaPersonaId, any> = {
   girlfriend: Heart,
 };
 
-const RING_ICONS: Record<RingAnimationStyle, any> = {
-  golden_spirals: Sparkles,
-  cosmic_pulse: Radio,
-  quantum_orbit: Orbit,
-  soundwave_bars: Activity,
-  celestial_gyro: Compass,
-  supernova_flares: Flame,
-};
-
-export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
+export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
   isOpen,
   onClose,
   config,
   onChangeConfig,
   onPreviewGreeting,
+  theme = 'light',
 }) => {
-  const [activeTab, setActiveTab] = useState<'persona' | 'wake_word' | 'voice' | 'rings' | 'engine'>('persona');
+  const [activeTab, setActiveTab] = useState<'persona' | 'device_control' | 'wake_word' | 'voice' | 'engine'>('device_control');
   const [testWakeWordState, setTestWakeWordState] = useState<'idle' | 'testing' | 'success'>('idle');
   const [micStatus, setMicStatus] = useState<'granted' | 'prompt' | 'denied' | 'checking'>('checking');
   const [isTestingMic, setIsTestingMic] = useState(false);
   const [testMicVolume, setTestMicVolume] = useState(0);
   const [micGrantedToast, setMicGrantedToast] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [secretPassInput, setSecretPassInput] = useState('');
+  const [secretUnlockError, setSecretUnlockError] = useState(false);
+  const [secretUnlockSuccess, setSecretUnlockSuccess] = useState(false);
+
+  // App Control Tab State
+  const [bridgeStatus, setBridgeStatus] = useState(() => getAppBridgeStatus());
+  const [selectedCompanionIndex, setSelectedCompanionIndex] = useState(0);
+  const [copiedCodeToast, setCopiedCodeToast] = useState(false);
+  const [testActionNotice, setTestActionNotice] = useState<string | null>(null);
+  const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
+
+  // Custom Contact Form State
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [newContactHindi, setNewContactHindi] = useState('');
+  const [showAddContact, setShowAddContact] = useState(false);
+
+  // Calculator & Notes Tester
+  const [calcInput, setCalcInput] = useState('45 * 12');
+  const [calcResult, setCalcResult] = useState<string | null>(null);
+  const [calcSteps, setCalcSteps] = useState<string[]>([]);
+  const [noteInput, setNoteInput] = useState('Buy almond milk and organic fruits');
+
   const testMicStreamRef = useRef<MediaStream | null>(null);
   const testMicCtxRef = useRef<AudioContext | null>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDark = theme === 'dark';
 
-  // Live Canvas Preview for Ring Animation Tab
+  const isGirlfriendUnlocked = Boolean(config.secretGirlfriendUnlocked || config.persona === 'girlfriend');
+
+  const allContacts: ContactEntry[] = [
+    ...(config.customContacts || []),
+    ...DEFAULT_CONTACTS,
+  ];
+
   useEffect(() => {
-    if (!isOpen || activeTab !== 'rings') return;
-    const canvas = previewCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    return subscribeToAppBridge((status) => {
+      setBridgeStatus(status);
+    });
+  }, []);
 
-    let animId: number;
-    let angle = 0;
-    const currentStyle = config.ringAnimation || 'golden_spirals';
+  const handleUnlockSecretGirlfriend = () => {
+    onChangeConfig({ secretGirlfriendUnlocked: true, persona: 'girlfriend' });
+    setSecretUnlockSuccess(true);
+    setTimeout(() => setSecretUnlockSuccess(false), 3000);
+    if (config.soundEffects) {
+      playSoundCue('pop');
+    }
+  };
 
-    const renderPreview = () => {
-      angle += 0.03;
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
-      const cx = w / 2;
-      const cy = h / 2;
-      const baseR = 36;
-
-      // Soft center orb
-      ctx.beginPath();
-      ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
-      ctx.fillStyle = '#18181B';
-      ctx.fill();
-
-      // Style specific preview rendering
-      if (currentStyle === 'golden_spirals') {
-        const arms = [0, Math.PI];
-        arms.forEach((offset, idx) => {
-          ctx.beginPath();
-          for (let i = 0; i <= 60; i++) {
-            const t = i / 60;
-            const r = baseR + 2 + t * 30;
-            const a = offset + (idx === 0 ? 1 : -1) * (angle + t * Math.PI * 2);
-            const x = cx + Math.cos(a) * r;
-            const y = cy + Math.sin(a) * r;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          }
-          ctx.strokeStyle = 'rgba(24, 24, 27, 0.45)';
-          ctx.lineWidth = 1.8;
-          ctx.stroke();
-        });
-      } else if (currentStyle === 'cosmic_pulse') {
-        for (let i = 0; i < 3; i++) {
-          const progress = ((angle * 0.2 + i / 3) % 1);
-          const r = baseR + 4 + progress * 32;
-          ctx.beginPath();
-          ctx.arc(cx, cy, r, 0, Math.PI * 2);
-          ctx.strokeStyle = `rgba(24, 24, 27, ${(1 - progress) * 0.45})`;
-          ctx.lineWidth = 1.6;
-          ctx.stroke();
-        }
-      } else if (currentStyle === 'quantum_orbit') {
-        const tilts = [0.4, 0.6, 0.35];
-        tilts.forEach((tilt, idx) => {
-          ctx.save();
-          ctx.translate(cx, cy);
-          ctx.rotate((idx * Math.PI) / 3 + angle * 0.2 * (idx === 1 ? -1 : 1));
-          ctx.beginPath();
-          ctx.ellipse(0, 0, baseR + 14 + idx * 6, (baseR + 14 + idx * 6) * tilt, 0, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(24, 24, 27, 0.35)';
-          ctx.lineWidth = 1.4;
-          ctx.stroke();
-
-          // Particle
-          const pa = angle * 1.5 * (idx === 1 ? -1 : 1);
-          const px = Math.cos(pa) * (baseR + 14 + idx * 6);
-          const py = Math.sin(pa) * ((baseR + 14 + idx * 6) * tilt);
-          ctx.beginPath();
-          ctx.arc(px, py, 2.5, 0, Math.PI * 2);
-          ctx.fillStyle = '#18181B';
-          ctx.fill();
-          ctx.restore();
-        });
-      } else if (currentStyle === 'soundwave_bars') {
-        const bars = 28;
-        for (let i = 0; i < bars; i++) {
-          const a = (i / bars) * Math.PI * 2 + angle * 0.1;
-          const hVal = 4 + Math.sin(i * 0.8 + angle * 2) * 12 + 6;
-          const x1 = cx + Math.cos(a) * (baseR + 4);
-          const y1 = cy + Math.sin(a) * (baseR + 4);
-          const x2 = cx + Math.cos(a) * (baseR + 4 + hVal);
-          const y2 = cy + Math.sin(a) * (baseR + 4 + hVal);
-          ctx.beginPath();
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.strokeStyle = 'rgba(24, 24, 27, 0.55)';
-          ctx.lineWidth = 1.6;
-          ctx.stroke();
-        }
-      } else if (currentStyle === 'celestial_gyro') {
-        [0.7, 0.5, 0.3].forEach((tilt, idx) => {
-          ctx.save();
-          ctx.translate(cx, cy);
-          ctx.rotate((idx * Math.PI) / 3 + angle * (0.3 + idx * 0.1) * (idx % 2 === 0 ? 1 : -1));
-          ctx.beginPath();
-          ctx.ellipse(0, 0, baseR + 12 + idx * 8, (baseR + 12 + idx * 8) * tilt, 0, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(24, 24, 27, 0.4)';
-          ctx.lineWidth = 1.4;
-          ctx.stroke();
-          ctx.restore();
-        });
-      } else if (currentStyle === 'supernova_flares') {
-        ctx.beginPath();
-        const pts = 36;
-        for (let i = 0; i <= pts; i++) {
-          const t = i / pts;
-          const a = t * Math.PI * 2 + angle * 0.2;
-          const flareH = 6 + (Math.sin(i * 2 + angle * 3) > 0 ? 14 : 2);
-          const r = baseR + 4 + flareH;
-          const x = cx + Math.cos(a) * r;
-          const y = cy + Math.sin(a) * r;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.closePath();
-        ctx.strokeStyle = 'rgba(24, 24, 27, 0.45)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
-
-      animId = requestAnimationFrame(renderPreview);
-    };
-
-    animId = requestAnimationFrame(renderPreview);
-    return () => cancelAnimationFrame(animId);
-  }, [isOpen, activeTab, config.ringAnimation]);
+  const handleSecretPassSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = secretPassInput.trim().toLowerCase();
+    if (['love', 'meera', 'girlfriend', 'daksh', 'sweetheart', 'gf', 'secret', 'jaan'].includes(clean)) {
+      handleUnlockSecretGirlfriend();
+      setSecretPassInput('');
+      setSecretUnlockError(false);
+    } else {
+      setSecretUnlockError(true);
+      setTimeout(() => setSecretUnlockError(false), 2500);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
       getMicrophonePermissionStatus().then((status) => {
         setMicStatus(status === 'unsupported' ? 'prompt' : status);
       });
+      setBridgeStatus(getAppBridgeStatus());
     }
     return () => {
-      // Clean up any active mic test when closing modal
       if (testMicStreamRef.current) {
         testMicStreamRef.current.getTracks().forEach((t) => t.stop());
         testMicStreamRef.current = null;
@@ -284,13 +236,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
 
     try {
       setIsTestingMic(true);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       testMicStreamRef.current = stream;
       setMicStatus('granted');
 
@@ -315,7 +261,6 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
         setTestMicVolume(Math.min(100, Math.round((avg / 110) * 100)));
       }, 40);
 
-      // Auto stop test after 8 seconds
       setTimeout(() => {
         clearInterval(interval);
         if (testMicStreamRef.current) {
@@ -363,1203 +308,1141 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = ({
     }, 900);
   };
 
+  const handleExecuteQuickAppTest = async (
+    action: any,
+    targetApp: SupportedTargetApp,
+    query?: string,
+    textToType?: string,
+    phoneNumber?: string,
+    contactName?: string,
+    mathExpr?: string
+  ) => {
+    try {
+      const res = await executeAppControlCommand(
+        {
+          intent: 'app_control',
+          action,
+          target_app: targetApp,
+          query,
+          text_to_type: textToType,
+          phone_number: phoneNumber,
+          contact_name: contactName,
+          math_expression: mathExpr,
+          note_app: config.preferredNotesApp || 'google_keep',
+        },
+        config.customContacts || []
+      );
+
+      setTestActionNotice(res.message);
+      if (config.soundEffects) {
+        playSoundCue('tool');
+      }
+      setTimeout(() => setTestActionNotice(null), 3500);
+    } catch (err) {
+      console.warn('App control test error:', err);
+    }
+  };
+
+  const handleAddCustomContact = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newContactName.trim() || !newContactPhone.trim()) return;
+
+    const newEntry: ContactEntry = {
+      id: `custom_${Date.now()}`,
+      name: newContactName.trim(),
+      hindiName: newContactHindi.trim() || undefined,
+      phoneNumber: newContactPhone.trim(),
+      avatarColor: 'bg-indigo-500',
+    };
+
+    const updated = [newEntry, ...(config.customContacts || [])];
+    onChangeConfig({ customContacts: updated });
+    setNewContactName('');
+    setNewContactPhone('');
+    setNewContactHindi('');
+    setShowAddContact(false);
+  };
+
+  const handleDeleteCustomContact = (id: string) => {
+    const updated = (config.customContacts || []).filter((c) => c.id !== id);
+    onChangeConfig({ customContacts: updated });
+  };
+
+  const handleRunCalculatorTest = () => {
+    const res = evaluateMathExpression(calcInput);
+    if (res.result !== null) {
+      setCalcResult(res.formatted);
+      setCalcSteps(res.steps);
+      handleExecuteQuickAppTest('calculate', 'calculator', undefined, undefined, undefined, undefined, calcInput);
+    }
+  };
+
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCodeToast(true);
+    setTimeout(() => setCopiedCodeToast(false), 2000);
+  };
+
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 10 }}
-          className="w-full max-w-xl bg-white dark:bg-[#121217] border border-gray-200 dark:border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] text-[#1D1D1F] dark:text-gray-100"
-        >
-          {/* Header */}
-          <div className="p-5 border-b border-gray-100 dark:border-white/10 flex items-center justify-between bg-white dark:bg-[#121217]">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-black dark:bg-white flex items-center justify-center text-white dark:text-black shadow-sm">
-                <Settings className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-[#1D1D1F] dark:text-white">Preferences & Persona Settings</h3>
-                <p className="text-xs text-gray-400 dark:text-gray-400 font-light">Lila AI · Wake Word · Persona · Audio · Theme</p>
-              </div>
-            </div>
+    <>
+      <DeviceOnboardingModal
+        isOpen={isOnboardingModalOpen}
+        onClose={() => setIsOnboardingModalOpen(false)}
+        onComplete={() => {
+          setIsOnboardingModalOpen(false);
+          onChangeConfig({ hasCompletedOnboarding: true });
+        }}
+      />
 
-            <button
-              id="lila-close-settings-modal-btn"
-              onClick={onClose}
-              className="p-2 rounded-full text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Navigation Tabs */}
-          <div className="flex border-b border-gray-100 dark:border-white/10 bg-[#FAFAFA] dark:bg-[#16161D] px-4 py-2 gap-1 overflow-x-auto custom-scrollbar">
-            <button
-              id="tab-persona"
-              onClick={() => setActiveTab('persona')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeTab === 'persona'
-                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
-              }`}
-            >
-              <HeartHandshake className="w-3.5 h-3.5" />
-              <span>Persona & Role (स्वरूप)</span>
-            </button>
-
-            <button
-              id="tab-wake-word"
-              onClick={() => setActiveTab('wake_word')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeTab === 'wake_word'
-                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
-              }`}
-            >
-              <Mic className="w-3.5 h-3.5" />
-              <span>Wake Word (वेक-अप)</span>
-            </button>
-
-            <button
-              id="tab-voice"
-              onClick={() => setActiveTab('voice')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeTab === 'voice'
-                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
-              }`}
-            >
-              <Volume2 className="w-3.5 h-3.5" />
-              <span>Voice & Pitch (स्वर)</span>
-            </button>
-
-            <button
-              id="tab-rings"
-              onClick={() => setActiveTab('rings')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeTab === 'rings'
-                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Ring Animations (एनिमेशन)</span>
-            </button>
-
-            <button
-              id="tab-engine"
-              onClick={() => setActiveTab('engine')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeTab === 'engine'
-                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-xs'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-white/10 hover:text-black dark:hover:text-white'
-              }`}
-            >
-              <Cpu className="w-3.5 h-3.5" />
-              <span>Engine & Mode</span>
-            </button>
-          </div>
-
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar bg-[#FAFAFA] dark:bg-[#16161D]">
-            {/* Respect & Etiquette Guarantee Banner (Always visible at top of settings) */}
-            <div className="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-700/50 flex items-start gap-3 text-xs text-emerald-950 dark:text-emerald-200 shadow-xs">
-              <ShieldCheck className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <span className="font-semibold block text-emerald-900 dark:text-emerald-100">
-                  Hinglish & Supreme 'Aap' Respect Guarantee
-                </span>
-                <p className="text-[11px] text-emerald-800 dark:text-emerald-300 leading-relaxed font-light">
-                  Lila speaks in friendly, natural Hinglish (e.g. <em>"kya kar rahe he aap, sab ok hai na"</em>) and ALWAYS treats everyone with supreme dignity using <strong>"Aap"</strong>, <strong>"Aapka"</strong>, <strong>"bataiye"</strong>, and <strong>"kijiye"</strong>.
-                </p>
-              </div>
-            </div>
-
-            {/* TAB 1: PERSONA SETTINGS */}
-            {activeTab === 'persona' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
-                    <HeartHandshake className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
-                    <span>Choose Lila’s Persona (लीला का स्वरूप)</span>
-                  </label>
-                  <span className="text-xs text-black dark:text-white font-semibold">
-                    {currentPersona.name}
-                  </span>
+      <AnimatePresence>
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 10 }}
+            className="w-full max-w-2xl bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] text-[#1D1D1F]"
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white shadow-sm">
+                  <Settings className="w-4 h-4" />
                 </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-[#1D1D1F]">Preferences & Full Device Control (v3)</h3>
+                  <p className="text-xs text-gray-400 font-light">Calling · Calculator · MediaSession · Notepad · Voice</p>
+                </div>
+              </div>
 
-                <div className="grid grid-cols-1 gap-2.5">
-                  {(Object.keys(LILA_PERSONAS) as LilaPersonaId[])
-                    .filter((pKey) => !LILA_PERSONAS[pKey].isSecret)
-                    .map((pKey) => {
-                      const p = LILA_PERSONAS[pKey];
-                      const isSelected = config.persona === p.id;
-                      const Icon = PERSONA_ICONS[p.id] || Sparkles;
+              <button
+                id="lila-close-settings-modal-btn"
+                onClick={onClose}
+                className="p-2 rounded-full text-gray-400 hover:text-black hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-                      return (
-                        <div
-                          key={p.id}
-                          id={`persona-option-${p.id}`}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => onChangeConfig({ persona: p.id })}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              onChangeConfig({ persona: p.id });
-                            }
-                          }}
-                          className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer select-none ${
-                            isSelected
-                              ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-sm'
-                              : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 hover:border-gray-300 dark:hover:border-white/20'
-                          }`}
+            {/* Navigation Tabs */}
+            <div
+              className={`flex border-b px-4 py-2 gap-1 overflow-x-auto custom-scrollbar transition-colors ${
+                isDark ? 'bg-[#14161C] border-[#22252D]' : 'bg-[#FAFAFA] border-gray-100'
+              }`}
+            >
+              <button
+                id="tab-device-control"
+                onClick={() => setActiveTab('device_control')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'device_control'
+                    ? isDark
+                      ? 'bg-white text-black shadow-xs'
+                      : 'bg-black text-white shadow-xs'
+                    : isDark
+                    ? 'text-gray-400 hover:bg-white/10 hover:text-white'
+                    : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Device Control (v3)</span>
+              </button>
+
+              <button
+                id="tab-persona"
+                onClick={() => setActiveTab('persona')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'persona'
+                    ? isDark
+                      ? 'bg-white text-black shadow-xs'
+                      : 'bg-black text-white shadow-xs'
+                    : isDark
+                    ? 'text-gray-400 hover:bg-white/10 hover:text-white'
+                    : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                }`}
+              >
+                <HeartHandshake className="w-3.5 h-3.5" />
+                <span>Persona ({currentPersona.name})</span>
+              </button>
+
+              <button
+                id="tab-wake-word"
+                onClick={() => setActiveTab('wake_word')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'wake_word'
+                    ? isDark
+                      ? 'bg-white text-black shadow-xs'
+                      : 'bg-black text-white shadow-xs'
+                    : isDark
+                    ? 'text-gray-400 hover:bg-white/10 hover:text-white'
+                    : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                }`}
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span>Wake Word & Mic</span>
+              </button>
+
+              <button
+                id="tab-voice"
+                onClick={() => setActiveTab('voice')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'voice'
+                    ? isDark
+                      ? 'bg-white text-black shadow-xs'
+                      : 'bg-black text-white shadow-xs'
+                    : isDark
+                    ? 'text-gray-400 hover:bg-white/10 hover:text-white'
+                    : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Voice & Pitch</span>
+              </button>
+
+              <button
+                id="tab-engine"
+                onClick={() => setActiveTab('engine')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'engine'
+                    ? isDark
+                      ? 'bg-white text-black shadow-xs'
+                      : 'bg-black text-white shadow-xs'
+                    : isDark
+                    ? 'text-gray-400 hover:bg-white/10 hover:text-white'
+                    : 'text-gray-600 hover:bg-gray-200/70 hover:text-black'
+                }`}
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                <span>Engine & Protocol</span>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1 custom-scrollbar space-y-6">
+              {/* TAB 1: DEVICE CONTROL & SYSTEM AUTOMATION (v3) */}
+              {activeTab === 'device_control' && (
+                <div className="space-y-5">
+                  {/* Permissions Health & Onboarding Hub */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-50/70 via-amber-50/50 to-orange-50/50 border border-rose-200/80 shadow-sm space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <ShieldCheck className="w-4 h-4 text-rose-600" />
+                          <span className="font-bold text-xs text-rose-950">
+                            Device Permissions Center (सिस्टम अनुमतियां)
+                          </span>
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-rose-200/80 text-rose-800 font-bold">
+                            Step 0 Setup
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-rose-900/80 font-light leading-relaxed">
+                          Lila requires permissions to place calls, control background media, and operate Calculator/Notepad apps.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsOnboardingModalOpen(true)}
+                        className="px-3.5 py-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 shrink-0 active:scale-95"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>Run Setup Flow</span>
+                      </button>
+                    </div>
+
+                    {/* Permissions Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
+                      {/* Microphone */}
+                      <div className="p-2.5 rounded-xl bg-white/90 border border-rose-100 flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-semibold flex items-center gap-1 text-slate-800">
+                            <Mic className="w-3.5 h-3.5 text-rose-500" />
+                            <span>Microphone</span>
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-light block">Voice Input</span>
+                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${bridgeStatus.micGranted ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {bridgeStatus.micGranted ? 'Granted' : 'Grant'}
+                        </span>
+                      </div>
+
+                      {/* Phone Calling */}
+                      <div className="p-2.5 rounded-xl bg-white/90 border border-rose-100 flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-semibold flex items-center gap-1 text-slate-800">
+                            <PhoneCall className="w-3.5 h-3.5 text-blue-500" />
+                            <span>Phone Calls</span>
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-light block">ACTION_CALL</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={requestPhonePermission}
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-semibold cursor-pointer ${bridgeStatus.phoneCallGranted ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
                         >
-                          <div className="flex items-start justify-between gap-2 mb-1.5">
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                                  isSelected ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'
-                                }`}
-                              >
-                                <Icon className="w-3.5 h-3.5" />
-                              </div>
-                              <div>
-                                <div className="font-semibold text-xs flex items-center gap-2">
-                                  <span>{p.name}</span>
-                                  <span
-                                    className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
-                                      isSelected
-                                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-black border-black dark:border-white'
-                                        : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10'
-                                    }`}
-                                  >
-                                    {p.tag}
-                                  </span>
-                                </div>
-                                <div className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">{p.hindiName}</div>
-                              </div>
+                          {bridgeStatus.phoneCallGranted ? 'Granted' : 'Allow'}
+                        </button>
+                      </div>
+
+                      {/* Contacts Access */}
+                      <div className="p-2.5 rounded-xl bg-white/90 border border-rose-100 flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-semibold flex items-center gap-1 text-slate-800">
+                            <Users className="w-3.5 h-3.5 text-purple-500" />
+                            <span>Contacts</span>
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-light block">Read Names</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={requestContactsPermission}
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-semibold cursor-pointer ${bridgeStatus.contactsGranted ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                        >
+                          {bridgeStatus.contactsGranted ? 'Granted' : 'Allow'}
+                        </button>
+                      </div>
+
+                      {/* Notification Access */}
+                      <div className="p-2.5 rounded-xl bg-white/90 border border-rose-100 flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-semibold flex items-center gap-1 text-slate-800">
+                            <Bell className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Notification Access</span>
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-light block">MediaSession</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={requestNotificationAccessSettings}
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-semibold cursor-pointer ${bridgeStatus.notificationAccessGranted ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                        >
+                          {bridgeStatus.notificationAccessGranted ? 'Active' : 'Settings'}
+                        </button>
+                      </div>
+
+                      {/* Accessibility Service */}
+                      <div className="p-2.5 rounded-xl bg-white/90 border border-rose-100 flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-semibold flex items-center gap-1 text-slate-800">
+                            <Layers className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>Accessibility UI</span>
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-light block">Calc & Notepad</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={requestAccessibilitySettings}
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-semibold cursor-pointer ${bridgeStatus.accessibilityAccessGranted ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                        >
+                          {bridgeStatus.accessibilityAccessGranted ? 'Active' : 'Settings'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* STEP 1: Phone Calling & Voice Contacts Book */}
+                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <PhoneCall className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Step 1: Voice Calling & Contacts (कॉल और संपर्क)</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddContact(!showAddContact)}
+                        className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{showAddContact ? 'Cancel' : 'Add Contact'}</span>
+                      </button>
+                    </div>
+
+                    {/* Add Contact Inline Form */}
+                    {showAddContact && (
+                      <form onSubmit={handleAddCustomContact} className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <input
+                            type="text"
+                            placeholder="Name (e.g. Doctor, Boss)"
+                            value={newContactName}
+                            onChange={(e) => setNewContactName(e.target.value)}
+                            className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white"
+                            required
+                          />
+                          <input
+                            type="text"
+                            placeholder="Hindi Tag (optional)"
+                            value={newContactHindi}
+                            onChange={(e) => setNewContactHindi(e.target.value)}
+                            className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white"
+                          />
+                          <input
+                            type="tel"
+                            placeholder="Phone (+91 98...)"
+                            value={newContactPhone}
+                            onChange={(e) => setNewContactPhone(e.target.value)}
+                            className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white"
+                            required
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          <button
+                            type="submit"
+                            className="px-3 py-1 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 cursor-pointer"
+                          >
+                            Save Contact
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Contacts Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {allContacts.map((c) => (
+                        <div
+                          key={c.id}
+                          className="p-2.5 rounded-xl border border-gray-200 hover:border-gray-300 bg-gray-50/50 flex items-center justify-between group"
+                        >
+                          <div className="flex items-center space-x-2.5 min-w-0">
+                            <div className={`w-8 h-8 rounded-full ${c.avatarColor || 'bg-rose-500'} text-white flex items-center justify-center font-bold text-xs shrink-0`}>
+                              {c.name.charAt(0)}
                             </div>
-                            {isSelected && <Check className="w-4 h-4 text-black dark:text-white shrink-0 mt-1" />}
+                            <div className="min-w-0">
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-xs font-semibold text-gray-900 truncate">{c.name}</span>
+                                {c.hindiName && (
+                                  <span className="text-[10px] text-gray-500">({c.hindiName})</span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-gray-500 font-mono block truncate">{c.phoneNumber}</span>
+                            </div>
                           </div>
 
-                          <p className="text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed font-light pl-9.5">
-                            {p.hindiDescription}
-                          </p>
-
-                          {/* Sample Greeting Preview */}
-                          <div className="mt-2.5 pt-2 border-t border-gray-100 dark:border-white/10 flex items-center justify-between text-[11px] pl-9.5">
-                            <span className="text-gray-500 dark:text-gray-400 italic truncate max-w-[340px]">
-                              "{p.sampleGreeting}"
-                            </span>
-                            {onPreviewGreeting && (
+                          <div className="flex items-center space-x-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleExecuteQuickAppTest('call', 'phone', undefined, undefined, c.phoneNumber, c.name)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold flex items-center space-x-1 cursor-pointer transition-colors shadow-xs"
+                              title={`Call ${c.name}`}
+                            >
+                              <PhoneCall className="w-3 h-3" />
+                              <span>Call</span>
+                            </button>
+                            {c.id.startsWith('custom_') && (
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onChangeConfig({ persona: p.id });
-                                  onPreviewGreeting(p.sampleGreeting);
-                                }}
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-black dark:text-white hover:text-neutral-700 dark:hover:text-gray-300 px-2 py-0.5 rounded bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 transition-colors shrink-0 ml-2 cursor-pointer"
-                                title="Listen to sample greeting"
+                                onClick={() => handleDeleteCustomContact(c.id)}
+                                className="p-1 text-gray-400 hover:text-red-600 rounded cursor-pointer"
                               >
-                                <Play className="w-2.5 h-2.5 fill-black dark:fill-white" />
-                                <span>Listen</span>
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
                           </div>
                         </div>
-                      );
-                    })}
-                </div>
-
-                {/* SECRET PERSONA: GIRLFRIEND (AT LAST OF PERSONA TAB) */}
-                <div className="pt-3 border-t border-gray-200/70 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-rose-600 uppercase tracking-widest flex items-center gap-1.5">
-                      <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
-                      <span>Secret Persona (सीक्रेट स्वरूप)</span>
-                    </label>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/60">
-                      Bonus Mode
-                    </span>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-50/80 via-pink-50/40 to-white border border-rose-200/80 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-rose-100 border border-rose-200/80 flex items-center justify-center text-rose-600 shrink-0">
-                          <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
+                  {/* STEP 3: Built-in App Automation (Calculator & Notepad) */}
+                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <Calculator className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Step 3: Built-in App Automation (कैलकुलेटर और नोटपैड)</span>
+                    </label>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Calculator Automation Card */}
+                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <Calculator className="w-4 h-4 text-rose-600" />
+                            <span>Calculator Button Automation</span>
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-500">Accessibility</span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-xs text-rose-950">
-                              Girlfriend Persona (गर्लफ्रेंड)
-                            </span>
-                            <span className="text-[9px] px-2 py-0.2 rounded-full bg-rose-100 text-rose-800 border border-rose-200 font-semibold">
-                              Special
+                        <p className="text-[11px] text-slate-600 font-light">
+                          Taps numeric & operator buttons sequentially in device Calculator.
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={calcInput}
+                            onChange={(e) => setCalcInput(e.target.value)}
+                            placeholder="e.g. 45 * 12 or 500 + 250"
+                            className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleRunCalculatorTest}
+                            className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 cursor-pointer shrink-0"
+                          >
+                            Calculate
+                          </button>
+                        </div>
+                        {calcResult && (
+                          <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
+                            <strong>Result:</strong> {calcResult} &nbsp;
+                            <span className="text-[10px] text-emerald-700">
+                              (Buttons: {calcSteps.join(' ')} )
                             </span>
                           </div>
-                          <p className="text-[11px] text-rose-800/80 font-light">
-                            Romantic, sweet & caring Hinglish voice companion with deep affection.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Enable / Disable Secret Switch */}
-                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                        <input
-                          id="secret-girlfriend-toggle"
-                          type="checkbox"
-                          checked={!!config.secretGirlfriendEnabled}
-                          onChange={(e) => {
-                            const isEnabled = e.target.checked;
-                            if (!isEnabled && config.persona === 'girlfriend') {
-                              onChangeConfig({
-                                secretGirlfriendEnabled: false,
-                                persona: 'friend',
-                              });
-                            } else {
-                              onChangeConfig({ secretGirlfriendEnabled: isEnabled });
-                            }
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-10 h-5.5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-rose-500"></div>
-                      </label>
-                    </div>
-
-                    {/* Interactive Girlfriend Option if Enabled */}
-                    {config.secretGirlfriendEnabled ? (
-                      <div className="pt-2 border-t border-rose-200/60">
-                        {(() => {
-                          const p = LILA_PERSONAS.girlfriend;
-                          const isSelected = config.persona === 'girlfriend';
-
-                          return (
-                            <div
-                              id="persona-option-girlfriend"
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => onChangeConfig({ persona: 'girlfriend' })}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  onChangeConfig({ persona: 'girlfriend' });
-                                }
-                              }}
-                              className={`w-full p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer select-none ${
-                                isSelected
-                                  ? 'bg-white border-rose-500 text-rose-950 ring-2 ring-rose-300 shadow-sm'
-                                  : 'bg-white/80 border-rose-200 text-gray-700 hover:bg-white hover:border-rose-300'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-2 mb-1.5">
-                                <div className="flex items-center gap-2.5">
-                                  <div
-                                    className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                                      isSelected
-                                        ? 'bg-rose-500 text-white'
-                                        : 'bg-rose-100 text-rose-600'
-                                    }`}
-                                  >
-                                    <Heart className="w-3.5 h-3.5 fill-current" />
-                                  </div>
-                                  <div>
-                                    <div className="font-semibold text-xs flex items-center gap-2">
-                                      <span>{p.name}</span>
-                                      <span
-                                        className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
-                                          isSelected
-                                            ? 'bg-rose-600 text-white border-rose-600'
-                                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                                        }`}
-                                      >
-                                        {p.tag}
-                                      </span>
-                                    </div>
-                                    <div className="text-[11px] text-rose-800 font-medium">
-                                      {p.hindiName}
-                                    </div>
-                                  </div>
-                                </div>
-                                {isSelected ? (
-                                  <span className="flex items-center gap-1 text-[11px] text-rose-700 font-semibold">
-                                    <Check className="w-4 h-4 text-rose-600" />
-                                    <span>Active</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 font-medium">
-                                    Click to Activate
-                                  </span>
-                                )}
-                              </div>
-
-                              <p className="text-[11px] text-rose-900/80 leading-relaxed font-light pl-9.5">
-                                {p.hindiDescription}
-                              </p>
-
-                              {/* Sample Greeting Preview */}
-                              <div className="mt-2.5 pt-2 border-t border-rose-100 flex items-center justify-between text-[11px] pl-9.5">
-                                <span className="text-rose-700/80 italic truncate max-w-[320px]">
-                                  "{p.sampleGreeting}"
-                                </span>
-                                {onPreviewGreeting && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onChangeConfig({ persona: 'girlfriend' });
-                                      onPreviewGreeting(p.sampleGreeting);
-                                    }}
-                                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-800 hover:text-rose-950 px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 transition-colors shrink-0 ml-2 cursor-pointer"
-                                    title="Listen to sample greeting"
-                                  >
-                                    <Play className="w-2.5 h-2.5 fill-rose-700 text-rose-700" />
-                                    <span>Listen</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-[11px] text-rose-700/70 pt-1 font-light italic">
-                        <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                        <span>Secret Girlfriend persona is disabled. Flip the switch above to enable.</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: WAKE WORD SETTINGS */}
-            {activeTab === 'wake_word' && (
-              <div className="space-y-5">
-                {/* Always Allow Microphone for Lila Section */}
-                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-xs text-[#1D1D1F] flex items-center gap-1.5">
-                          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                          <span>Always Allow Lila for Microphone (हमेशा माइक चालू रखें)</span>
-                        </span>
-                        {config.alwaysAllowMic && micStatus === 'granted' && (
-                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
-                            Pre-Warmed & Allowed
-                          </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-gray-500 font-light leading-relaxed">
-                        Keep microphone pre-authorized across sessions. When enabled, wake words ("Hey Lila", "सुनो लीला") and instant voice conversation start with zero delays and no repetitive browser prompts.
-                      </p>
+
+                      {/* Notepad Dictation Card */}
+                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <Edit3 className="w-4 h-4 text-purple-600" />
+                            <span>Notepad / Keep Dictation</span>
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-500">Text Injection</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 font-light">
+                          Injects dictated text into editable nodes of Note apps.
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={noteInput}
+                            onChange={(e) => setNoteInput(e.target.value)}
+                            placeholder="Note text to inject..."
+                            className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleExecuteQuickAppTest('type_text', 'notepad', undefined, noteInput)}
+                            className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 cursor-pointer shrink-0"
+                          >
+                            Type Note
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <input
-                      type="checkbox"
-                      id="lila-always-allow-mic-toggle"
-                      checked={config.alwaysAllowMic}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        onChangeConfig({ alwaysAllowMic: checked });
-                        if (checked) {
-                          handleAuthorizeAlwaysMic();
-                        }
-                      }}
-                      className="w-4 h-4 accent-black rounded cursor-pointer shrink-0 mt-1"
-                    />
                   </div>
 
-                  {/* Status & Quick Action Buttons */}
-                  <div className="pt-2 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-[11px] text-gray-400 font-medium">Browser Permission:</span>
-                      {micStatus === 'granted' ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/70">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>Always Allowed & Active</span>
-                        </span>
-                      ) : micStatus === 'denied' ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200/70">
-                          <AlertCircle className="w-3 h-3" />
-                          <span>Blocked in Browser</span>
-                        </span>
-                      ) : micStatus === 'checking' ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
-                          <span>Checking access...</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded-md">
-                          <span>Prompt when needed</span>
-                        </span>
-                      )}
+                  {/* STEP 2: Media & System Quick Triggers */}
+                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Radio className="w-3.5 h-3.5 text-gray-600" />
+                        <span>Step 2: MediaSession & Quick System Triggers</span>
+                      </label>
+                      <span className="text-[10px] text-gray-400 font-mono">Instant Dispatch</span>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {micStatus !== 'granted' && (
-                        <button
-                          type="button"
-                          id="lila-grant-always-mic-btn"
-                          onClick={handleAuthorizeAlwaysMic}
-                          className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>Authorize Now</span>
-                        </button>
-                      )}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteQuickAppTest('pause', 'youtube')}
+                        className="p-2.5 rounded-xl border border-gray-200 hover:border-rose-300 hover:bg-rose-50/40 text-left transition-all cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-0.5">
+                          <Pause className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Pause Media</span>
+                        </div>
+                        <span className="text-[10px] text-gray-500 font-light block">YouTube / Player</span>
+                      </button>
 
                       <button
                         type="button"
-                        id="lila-test-mic-input-btn"
-                        onClick={handleToggleMicTesting}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
-                          isTestingMic
-                            ? 'bg-rose-50 text-rose-700 border border-rose-200 animate-pulse'
-                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                        }`}
+                        onClick={() => handleExecuteQuickAppTest('resume', 'youtube')}
+                        className="p-2.5 rounded-xl border border-gray-200 hover:border-rose-300 hover:bg-rose-50/40 text-left transition-all cursor-pointer group"
                       >
-                        <Mic className="w-3 h-3" />
-                        <span>{isTestingMic ? 'Stop Test' : 'Test Microphone'}</span>
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-0.5">
+                          <Play className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Resume Media</span>
+                        </div>
+                        <span className="text-[10px] text-gray-500 font-light block">Playback</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteQuickAppTest('next', 'spotify')}
+                        className="p-2.5 rounded-xl border border-gray-200 hover:border-rose-300 hover:bg-rose-50/40 text-left transition-all cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-0.5">
+                          <SkipForward className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>Next Track</span>
+                        </div>
+                        <span className="text-[10px] text-gray-500 font-light block">Skip forward</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteQuickAppTest('volume_up', 'system')}
+                        className="p-2.5 rounded-xl border border-gray-200 hover:border-rose-300 hover:bg-rose-50/40 text-left transition-all cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-0.5">
+                          <Volume2 className="w-3.5 h-3.5 text-blue-500" />
+                          <span>Volume Up</span>
+                        </div>
+                        <span className="text-[10px] text-gray-500 font-light block">+1 Step</span>
                       </button>
                     </div>
-                  </div>
 
-                  {/* Live Mic Sensitivity Gauge when Testing */}
-                  {isTestingMic && (
-                    <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 space-y-1.5">
-                      <div className="flex justify-between items-center text-[10px] text-gray-600 font-mono">
-                        <span>Speak into your microphone now...</span>
-                        <span className="font-semibold text-black">{testMicVolume}% input level</span>
+                    {testActionNotice && (
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-[11px] flex items-center gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        <span>{testActionNotice}</span>
                       </div>
-                      <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-emerald-500 h-full transition-all duration-75 rounded-full"
-                          style={{ width: `${testMicVolume}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {micGrantedToast && (
-                    <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>Microphone is permanently authorized and always allowed for Lila!</span>
-                    </div>
-                  )}
-
-                  {micStatus === 'denied' && (
-                    <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-900 text-[11px] space-y-1">
-                      <div className="font-semibold flex items-center gap-1.5">
-                        <HelpCircle className="w-3.5 h-3.5 text-amber-700" />
-                        <span>How to allow microphone in your browser:</span>
-                      </div>
-                      <p className="text-amber-800 leading-snug">
-                        Click the lock icon <span className="font-semibold">🔒</span> in your browser's address bar next to the URL, change <strong>Microphone</strong> to <strong>"Allow"</strong>, and refresh the page.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Wake Word Main Toggle */}
-                <div className="flex items-center justify-between p-4 rounded-2xl bg-white border border-gray-200 shadow-sm">
-                  <div className="space-y-0.5">
-                    <span className="font-semibold text-xs text-[#1D1D1F] flex items-center gap-1.5">
-                      <Mic className="w-3.5 h-3.5 text-black" />
-                      <span>Standby Wake-Up Word Detection</span>
-                    </span>
-                    <span className="text-[11px] text-gray-500 font-light block">
-                      जब आप वेक वर्ड बोलेंगे (जैसे "Hey Lila" या "सुनो लीला"), लीला तुरंत सक्रिय होकर सुनेगी।
-                    </span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={config.wakeWordEnabled}
-                    onChange={(e) => onChangeConfig({ wakeWordEnabled: e.target.checked })}
-                    className="w-4 h-4 accent-black rounded cursor-pointer"
-                  />
-                </div>
-
-                {/* Wake Word Selection */}
-                <div className="space-y-3">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <Bell className="w-3.5 h-3.5 text-gray-600" />
-                    <span>Select Preferred Wake Word</span>
-                  </label>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {LILA_WAKE_WORDS.map((w) => {
-                      const isSelected = config.wakeWord === w.id;
-                      return (
-                        <button
-                          key={w.id}
-                          id={`wake-word-option-${w.id}`}
-                          disabled={!config.wakeWordEnabled}
-                          onClick={() => onChangeConfig({ wakeWord: w.id })}
-                          className={`p-3.5 rounded-2xl border text-left transition-all ${
-                            !config.wakeWordEnabled
-                              ? 'opacity-40 cursor-not-allowed bg-gray-50 border-gray-200'
-                              : isSelected
-                              ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
-                              : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-semibold text-xs">{w.label}</span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-black" />}
-                          </div>
-                          <p className="text-[11px] text-gray-500 font-light">{w.hindiLabel}</p>
-                          <div className="mt-2 text-[10px] font-mono text-gray-400">
-                            Keywords: {w.phrases.slice(0, 3).join(', ')}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Wake Word Chime Toggle */}
-                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-gray-200 shadow-sm">
-                  <div className="space-y-0.5">
-                    <span className="font-medium text-xs text-[#1D1D1F] block">
-                      Wake Up Audio Chime
-                    </span>
-                    <span className="text-[11px] text-gray-500 font-light block">
-                      Play a sweet rising two-tone audio chime whenever Lila detects your wake word
-                    </span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={config.wakeWordChime}
-                    onChange={(e) => onChangeConfig({ wakeWordChime: e.target.checked })}
-                    className="w-4 h-4 accent-black rounded cursor-pointer"
-                  />
-                </div>
-
-                {/* Interactive Wake Word Test */}
-                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="font-semibold text-xs text-[#1D1D1F] block">
-                      Test Wake Word Detection
-                    </span>
-                    <span className="text-[11px] text-gray-500 font-light block">
-                      Try triggering the wake up cue and responsive chime
-                    </span>
-                  </div>
-                  <button
-                    id="lila-test-wake-word-btn"
-                    onClick={handleTestWakeWord}
-                    disabled={testWakeWordState === 'testing'}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                      testWakeWordState === 'success'
-                        ? 'bg-emerald-600 text-white'
-                        : testWakeWordState === 'testing'
-                        ? 'bg-amber-500 text-white animate-pulse'
-                        : 'bg-black text-white hover:bg-neutral-800'
-                    }`}
-                  >
-                    {testWakeWordState === 'success' ? (
-                      <>
-                        <Check className="w-3 h-3" />
-                        <span>Awake!</span>
-                      </>
-                    ) : testWakeWordState === 'testing' ? (
-                      <span>Listening...</span>
-                    ) : (
-                      <>
-                        <Play className="w-3 h-3 fill-white" />
-                        <span>Simulate Wake Word</span>
-                      </>
                     )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3: VOICE & PITCH SETTINGS */}
-            {activeTab === 'voice' && (
-              <div className="space-y-6">
-                {/* Voice Model Selector */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <Volume2 className="w-3.5 h-3.5 text-gray-600" />
-                      <span>Voice Model</span>
-                    </label>
-                    <span className="text-xs text-black font-semibold">{config.voice}</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {LILA_VOICE_OPTIONS.map((v) => {
-                      const isSelected = config.voice === v.id;
-                      return (
-                        <button
-                          key={v.id}
-                          id={`voice-option-${v.id}`}
-                          onClick={() => onChangeConfig({ voice: v.id })}
-                          className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between ${
-                            isSelected
-                              ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
-                              : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-semibold text-xs flex items-center gap-1.5">
-                              {v.name}
-                              {v.tag && (
-                                <span
-                                  className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
-                                    v.isSoft
-                                      ? 'bg-pink-50 text-pink-700 border-pink-200'
-                                      : 'bg-gray-100 text-gray-800 border-gray-200'
-                                  }`}
-                                >
-                                  {v.tag}
-                                </span>
-                              )}
-                            </span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-black" />}
-                          </div>
-                          <p className="text-[11px] text-gray-500 leading-snug font-light">{v.vibe}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Voice Pitch Adjuster Slider */}
-                <div id="lila-pitch-adjuster-section" className="space-y-3 pt-4 border-t border-gray-200/80">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <Sliders className="w-3.5 h-3.5 text-gray-600" />
-                      <span>Voice Pitch Adjuster</span>
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-black text-white">
-                        {currentPitch.toFixed(2)}x
-                      </span>
-                      <span className="text-[10px] font-mono text-gray-500">
-                        ({pitchFormattedPercent})
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2 text-[#1D1D1F] font-medium">
-                        <Music2 className="w-3.5 h-3.5 text-pink-600" />
-                        <span>{getPitchDescription(currentPitch)}</span>
-                      </div>
-                      {currentPitch !== LILA_PITCH_CONFIG.default && (
-                        <button
-                          id="lila-reset-pitch-btn"
-                          onClick={handleResetPitch}
-                          className="text-[11px] text-gray-400 hover:text-black flex items-center gap-1 transition-colors"
-                          title="Reset to default pitch"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          <span>Reset</span>
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <input
-                        id="lila-pitch-slider-input"
-                        type="range"
-                        min={LILA_PITCH_CONFIG.min}
-                        max={LILA_PITCH_CONFIG.max}
-                        step={LILA_PITCH_CONFIG.step}
-                        value={currentPitch}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          onChangeConfig({ pitch: val });
-                        }}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black transition-all"
-                      />
-                      <div className="flex justify-between text-[10px] text-gray-400 font-mono">
-                        <span>Deep ({LILA_PITCH_CONFIG.min}x)</span>
-                        <span className="text-black font-semibold">
-                          Default ({LILA_PITCH_CONFIG.default}x)
+                  {/* Android Native Companion Project Source Code Viewer */}
+                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-semibold text-[#1D1D1F] flex items-center gap-1.5">
+                          <Code2 className="w-4 h-4 text-gray-700" />
+                          <span>Android Companion Source Files (Kotlin & XML)</span>
                         </span>
-                        <span>High ({LILA_PITCH_CONFIG.max}x)</span>
+                        <span className="text-[11px] text-gray-500 font-light block">
+                          Drop these into Android Studio to compile your native APK
+                        </span>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCode(ANDROID_COMPANION_FILES[selectedCompanionIndex]?.code || '')}
+                        className="px-3 py-1.5 rounded-full bg-black hover:bg-neutral-800 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        {copiedCodeToast ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy File</span>
+                          </>
+                        )}
+                      </button>
                     </div>
 
-                    {/* Quick Pitch Presets */}
-                    <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] uppercase font-bold text-gray-400 mr-1">Presets:</span>
-                      {LILA_PITCH_CONFIG.presets.map((preset) => {
-                        const isActive = Math.abs(currentPitch - preset.value) < 0.02;
+                    {/* File Selector Tabs */}
+                    <div className="flex gap-1 overflow-x-auto pb-1 custom-scrollbar">
+                      {ANDROID_COMPANION_FILES.map((file, idx) => {
+                        const isSelected = selectedCompanionIndex === idx;
                         return (
                           <button
-                            key={preset.label}
-                            id={`lila-pitch-preset-${preset.value}`}
-                            onClick={() => {
-                              onChangeConfig({ pitch: preset.value });
-                              previewPitchTone(preset.value);
-                            }}
-                            className={`px-2.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                              isActive
-                                ? 'bg-black text-white font-semibold shadow-xs'
-                                : 'bg-gray-100 hover:bg-gray-200 text-gray-700 font-normal'
+                            key={file.filename}
+                            type="button"
+                            onClick={() => setSelectedCompanionIndex(idx)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-mono whitespace-nowrap transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-neutral-900 text-white font-semibold'
+                                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                             }`}
                           >
-                            <span>{preset.label}</span>
-                            <span className="text-[10px] opacity-75 font-mono">({preset.value}x)</span>
+                            {file.filename}
                           </button>
                         );
                       })}
                     </div>
 
-                    <div className="pt-2 flex items-center justify-end">
+                    {/* Code Container */}
+                    <div className="relative rounded-xl bg-[#12141A] text-gray-300 p-3 font-mono text-[10px] leading-relaxed overflow-x-auto max-h-56 custom-scrollbar border border-[#2B2F3A]">
+                      <div className="text-[9px] uppercase tracking-wider text-rose-400 font-bold mb-1.5">
+                        {ANDROID_COMPANION_FILES[selectedCompanionIndex]?.description}
+                      </div>
+                      <pre className="whitespace-pre">{ANDROID_COMPANION_FILES[selectedCompanionIndex]?.code}</pre>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: PERSONA SETTINGS */}
+              {activeTab === 'persona' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {Object.values(LILA_PERSONAS)
+                      .filter((p) => !p.isSecret || isGirlfriendUnlocked)
+                      .map((p) => {
+                        const isSelected = config.persona === p.id;
+                        const Icon = PERSONA_ICONS[p.id] || Heart;
+                        const isGirlfriend = p.id === 'girlfriend';
+
+                        return (
+                          <div
+                            key={p.id}
+                            id={`persona-card-${p.id}`}
+                            onClick={() => onChangeConfig({ persona: p.id })}
+                            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative ${
+                              isGirlfriend
+                                ? isSelected
+                                  ? 'bg-rose-50 border-rose-500 ring-2 ring-rose-200 shadow-sm'
+                                  : 'bg-rose-50/30 border-rose-200 hover:bg-rose-50/60'
+                                : isSelected
+                                ? 'bg-white border-black ring-2 ring-black/10 shadow-sm'
+                                : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-2.5">
+                                <div
+                                  className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                                    isGirlfriend
+                                      ? 'bg-rose-500 text-white'
+                                      : isSelected
+                                      ? 'bg-black text-white'
+                                      : 'bg-gray-100 text-gray-700'
+                                  }`}
+                                >
+                                  <Icon className="w-3.5 h-3.5" />
+                                </div>
+                                <div>
+                                  <div className="font-semibold text-xs flex items-center gap-2">
+                                    <span>{p.name}</span>
+                                    <span
+                                      className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
+                                        isGirlfriend
+                                          ? 'bg-rose-500 text-white border-rose-500'
+                                          : isSelected
+                                          ? 'bg-neutral-900 text-white border-black'
+                                          : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      }`}
+                                    >
+                                      {isGirlfriend ? '💖 Secret' : p.tag}
+                                    </span>
+                                  </div>
+                                  <div className={`text-[11px] font-medium ${isGirlfriend ? 'text-rose-600' : 'text-gray-500'}`}>{p.hindiName}</div>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <Check className={`w-4 h-4 shrink-0 mt-1 ${isGirlfriend ? 'text-rose-600' : 'text-black'}`} />
+                              )}
+                            </div>
+
+                            <p className={`text-[11px] leading-relaxed font-light pl-9.5 ${isGirlfriend ? 'text-rose-900/80' : 'text-gray-600'}`}>
+                              {p.hindiDescription}
+                            </p>
+
+                            {/* Sample Greeting Preview */}
+                            <div className="mt-2.5 pt-2 border-t border-gray-100 flex items-center justify-between text-[11px] pl-9.5">
+                              <span className={`italic truncate max-w-[340px] ${isGirlfriend ? 'text-rose-700 font-medium' : 'text-gray-500'}`}>
+                                "{p.sampleGreeting}"
+                              </span>
+                              {onPreviewGreeting && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onChangeConfig({ persona: p.id });
+                                    onPreviewGreeting(p.sampleGreeting);
+                                  }}
+                                  className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded transition-colors shrink-0 ml-2 cursor-pointer ${
+                                    isGirlfriend
+                                      ? 'bg-rose-100 hover:bg-rose-200 text-rose-800'
+                                      : 'bg-gray-100 hover:bg-gray-200 text-black'
+                                  }`}
+                                  title="Listen to sample greeting"
+                                >
+                                  <Play className={`w-2.5 h-2.5 ${isGirlfriend ? 'fill-rose-700' : 'fill-black'}`} />
+                                  <span>Listen</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  {/* Secret Girlfriend Mode Vault Card */}
+                  <div
+                    className={`p-4 rounded-2xl border transition-all ${
+                      isGirlfriendUnlocked
+                        ? isDark
+                          ? 'bg-rose-950/30 border-rose-800/80 text-rose-200'
+                          : 'bg-rose-50/70 border-rose-200 text-rose-950'
+                        : isDark
+                        ? 'bg-[#181A20] border-[#2B2F3A] text-gray-300'
+                        : 'bg-white border-gray-200 text-gray-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                            isGirlfriendUnlocked
+                              ? 'bg-rose-500 text-white shadow-xs'
+                              : 'bg-gray-100 text-gray-500'
+                          }`}
+                        >
+                          {isGirlfriendUnlocked ? (
+                            <Heart className="w-3.5 h-3.5 fill-white" />
+                          ) : (
+                            <Lock className="w-3.5 h-3.5" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold flex items-center gap-1.5">
+                            <span>Secret Girlfriend Mode (सीक्रेट गर्लफ्रेंड मोड)</span>
+                            {isGirlfriendUnlocked && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-bold">
+                                Unlocked
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] opacity-75 font-light leading-relaxed mt-0.5">
+                            Ultra-sweet, romantic Hinglish with gentle care and minimal words.
+                          </p>
+                        </div>
+                      </div>
+
+                      {isGirlfriendUnlocked ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onChangeConfig({
+                              persona: config.persona === 'girlfriend' ? 'friend' : 'girlfriend',
+                            });
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 cursor-pointer shadow-xs ${
+                            config.persona === 'girlfriend'
+                              ? 'bg-rose-600 text-white hover:bg-rose-700 ring-2 ring-rose-300'
+                              : 'bg-black text-white hover:bg-neutral-800'
+                          }`}
+                        >
+                          {config.persona === 'girlfriend' ? 'Active 💖' : 'Select'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          id="direct-unlock-girlfriend-btn"
+                          onClick={handleUnlockSecretGirlfriend}
+                          className="px-3 py-1.5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                        >
+                          <Heart className="w-3 h-3 fill-white" />
+                          <span>Unlock 💖</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {!isGirlfriendUnlocked && (
+                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-white/5 flex flex-col sm:flex-row items-center justify-between gap-2">
+                        <form onSubmit={handleSecretPassSubmit} className="flex items-center gap-1.5 w-full sm:w-auto">
+                          <input
+                            type="text"
+                            placeholder="Passcode ('love', 'meera', 'gf')..."
+                            value={secretPassInput}
+                            onChange={(e) => setSecretPassInput(e.target.value)}
+                            className="px-2.5 py-1 text-xs rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent focus:outline-none focus:border-rose-400 w-full sm:w-48"
+                          />
+                          <button
+                            type="submit"
+                            className="px-2.5 py-1 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-rose-100 text-[11px] font-semibold text-gray-700 dark:text-gray-300 hover:text-rose-700 transition-colors shrink-0 cursor-pointer"
+                          >
+                            Unlock
+                          </button>
+                        </form>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: WAKE WORD SETTINGS */}
+              {activeTab === 'wake_word' && (
+                <div className="space-y-5">
+                  {/* Always Allow Microphone for Lila Section */}
+                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-xs text-[#1D1D1F] flex items-center gap-1.5">
+                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                            <span>Always Allow Lila for Microphone (हमेशा माइक चालू रखें)</span>
+                          </span>
+                          {config.alwaysAllowMic && micStatus === 'granted' && (
+                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
+                              Pre-Warmed & Allowed
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-gray-500 font-light leading-relaxed">
+                          Keeps the audio pipeline permanently ready to respond to wake words and touch without browser mic permission popups.
+                        </p>
+                      </div>
+
+                      {micStatus !== 'granted' && (
+                        <button
+                          type="button"
+                          id="authorize-always-mic-btn"
+                          onClick={handleAuthorizeAlwaysMic}
+                          className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Allow Microphone</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Wake Word Selector */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Radio className="w-3.5 h-3.5 text-gray-600" />
+                        <span>Wake Word Activation</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Wake Word Listening</span>
+                        <input
+                          type="checkbox"
+                          checked={config.wakeWordEnabled}
+                          onChange={(e) => onChangeConfig({ wakeWordEnabled: e.target.checked })}
+                          className="w-4 h-4 accent-black rounded cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {LILA_WAKE_WORDS.map((w) => {
+                        const isSelected = config.wakeWord === w.id;
+                        return (
+                          <button
+                            key={w.id}
+                            id={`wake-word-option-${w.id}`}
+                            onClick={() => onChangeConfig({ wakeWord: w.id, wakeWordEnabled: true })}
+                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                              !config.wakeWordEnabled
+                                ? 'opacity-40 cursor-not-allowed bg-gray-50 border-gray-200'
+                                : isSelected
+                                ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold text-xs">{w.label}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-black" />}
+                            </div>
+                            <p className="text-[11px] text-gray-500 font-light">{w.hindiLabel}</p>
+                            <div className="mt-2 text-[10px] font-mono text-gray-400">
+                              Keywords: {w.phrases.slice(0, 3).join(', ')}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: VOICE & PITCH SETTINGS */}
+              {activeTab === 'voice' && (
+                <div className="space-y-6">
+                  {/* Voice Model Selector */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Volume2 className="w-3.5 h-3.5 text-gray-600" />
+                        <span>Voice Model</span>
+                      </label>
+                      <span className="text-xs text-black font-semibold">{config.voice}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {LILA_VOICE_OPTIONS.map((v) => {
+                        const isSelected = config.voice === v.id;
+                        return (
+                          <button
+                            key={v.id}
+                            id={`voice-option-${v.id}`}
+                            onClick={() => onChangeConfig({ voice: v.id })}
+                            className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+                              isSelected
+                                ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold text-xs flex items-center gap-1.5">
+                                {v.name}
+                                {v.tag && (
+                                  <span
+                                    className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
+                                      v.isSoft
+                                        ? 'bg-pink-50 text-pink-700 border-pink-200'
+                                        : 'bg-gray-100 text-gray-800 border-gray-200'
+                                    }`}
+                                  >
+                                    {v.tag}
+                                  </span>
+                                )}
+                              </span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-black" />}
+                            </div>
+                            <p className="text-[11px] text-gray-500 leading-snug font-light">{v.vibe}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Voice Pitch Adjuster Slider */}
+                  <div id="lila-pitch-adjuster-section" className="space-y-3 pt-4 border-t border-gray-200/80">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Sliders className="w-3.5 h-3.5 text-gray-600" />
+                        <span>Voice Pitch Adjuster</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-black text-white">
+                          {currentPitch.toFixed(2)}x
+                        </span>
+                        <span className="text-[10px] font-mono text-gray-500">
+                          ({pitchFormattedPercent})
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 text-[#1D1D1F] font-medium">
+                          <Music2 className="w-3.5 h-3.5 text-pink-600" />
+                          <span>{getPitchDescription(currentPitch)}</span>
+                        </div>
+                        {currentPitch !== LILA_PITCH_CONFIG.default && (
+                          <button
+                            id="lila-reset-pitch-btn"
+                            onClick={handleResetPitch}
+                            className="text-[11px] text-gray-400 hover:text-black flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Reset to default pitch"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Reset</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <input
+                          id="lila-pitch-slider-input"
+                          type="range"
+                          min={LILA_PITCH_CONFIG.min}
+                          max={LILA_PITCH_CONFIG.max}
+                          step={LILA_PITCH_CONFIG.step}
+                          value={currentPitch}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            onChangeConfig({ pitch: val });
+                          }}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black transition-all"
+                        />
+                        <div className="flex justify-between text-[10px] text-gray-400 font-mono">
+                          <span>Deep ({LILA_PITCH_CONFIG.min}x)</span>
+                          <span className="text-black font-semibold">
+                            Default ({LILA_PITCH_CONFIG.default}x)
+                          </span>
+                          <span>High ({LILA_PITCH_CONFIG.max}x)</span>
+                        </div>
+                      </div>
+
+                      {/* Quick Pitch Presets */}
+                      <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] uppercase font-bold text-gray-400 mr-1">Presets:</span>
+                        {LILA_PITCH_CONFIG.presets.map((preset) => {
+                          const isActive = Math.abs(currentPitch - preset.value) < 0.02;
+                          return (
+                            <button
+                              key={preset.label}
+                              id={`lila-pitch-preset-${preset.value}`}
+                              onClick={() => {
+                                onChangeConfig({ pitch: preset.value });
+                                previewPitchTone(preset.value);
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                                isActive
+                                  ? 'bg-black text-white font-semibold shadow-xs'
+                                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700 font-normal'
+                              }`}
+                            >
+                              <span>{preset.label}</span>
+                              <span className="text-[10px] opacity-75 font-mono">({preset.value}x)</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="pt-2 flex items-center justify-end">
+                        <button
+                          id="lila-preview-pitch-chime-btn"
+                          onClick={handlePreviewTone}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-xs font-medium text-[#1D1D1F] transition-colors cursor-pointer"
+                        >
+                          <Play className="w-3 h-3 fill-black text-black" />
+                          <span>Preview Pitch Tone</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 5: ENGINE & PROTOCOL SETTINGS */}
+              {activeTab === 'engine' && (
+                <div className="space-y-5">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <Cpu className="w-3.5 h-3.5 text-gray-600" />
+                      <span>Connection Protocol</span>
+                    </label>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <button
-                        id="lila-preview-pitch-chime-btn"
-                        onClick={handlePreviewTone}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-xs font-medium text-[#1D1D1F] transition-colors"
+                        onClick={() => onChangeConfig({ connectionMode: 'live_websocket' })}
+                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                          config.connectionMode === 'live_websocket'
+                            ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
                       >
-                        <Play className="w-3 h-3 fill-black text-black" />
-                        <span>Preview Pitch Tone</span>
+                        <div className="font-semibold text-xs text-black mb-0.5">Gemini Live Stream</div>
+                        <div className="text-[11px] text-gray-500 font-light">
+                          Real-time bidirectional 24kHz PCM16 stream with live interruptions
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => onChangeConfig({ connectionMode: 'turn_based' })}
+                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                          config.connectionMode === 'turn_based'
+                            ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
+                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="font-semibold text-xs text-black mb-0.5">Smart Voice Turn</div>
+                        <div className="text-[11px] text-gray-500 font-light">
+                          Gemini 3.7 Flash + Grounding + 3.1 Flash TTS Synthesis
+                        </div>
                       </button>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* TAB: RING ANIMATIONS & VISUAL STYLES */}
-            {activeTab === 'rings' && (
-              <div className="space-y-5">
-                {/* Header info */}
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-gray-600" />
-                    <span>Select Ring Animation (रिंग एनिमेशन)</span>
-                  </label>
-                  <span className="text-xs text-black font-semibold">
-                    {LILA_RING_ANIMATIONS.find((r) => r.id === (config.ringAnimation || 'golden_spirals'))?.name}
-                  </span>
-                </div>
-
-                {/* Interactive Drop-down Chooser */}
-                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-semibold text-[#1D1D1F] block">
-                        Animation Chooser Drop-down
-                      </span>
-                      <span className="text-[11px] text-gray-500 font-light block">
-                        Quickly switch between 6 distinct high-fps visualizer animation styles
-                      </span>
-                    </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-black text-white font-mono font-semibold">
-                      6 Styles
-                    </span>
-                  </div>
-
-                  {/* Dropdown Select element */}
-                  <div className="relative">
-                    <button
-                      id="lila-ring-animation-dropdown-btn"
-                      type="button"
-                      onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                      className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-200 hover:border-gray-400 text-left transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        {(() => {
-                          const activeOpt = LILA_RING_ANIMATIONS.find(
-                            (r) => r.id === (config.ringAnimation || 'golden_spirals')
-                          );
-                          const IconComp = activeOpt ? RING_ICONS[activeOpt.id] || Sparkles : Sparkles;
-                          return (
-                            <>
-                              <div className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-xs">
-                                <IconComp className="w-3.5 h-3.5" />
-                              </div>
-                              <div>
-                                <div className="font-semibold text-xs text-[#1D1D1F] flex items-center gap-2">
-                                  <span>{activeOpt?.name}</span>
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-gray-200 text-gray-800 font-semibold uppercase">
-                                    {activeOpt?.tag}
-                                  </span>
-                                </div>
-                                <div className="text-[11px] text-gray-500 font-medium">
-                                  {activeOpt?.hindiName}
-                                </div>
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                      <ChevronDown
-                        className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${
-                          isDropdownOpen ? 'rotate-180 text-black' : ''
-                        }`}
-                      />
-                    </button>
-
-                    {/* Dropdown Popup Menu */}
-                    <AnimatePresence>
-                      {isDropdownOpen && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          transition={{ duration: 0.15 }}
-                          className="absolute left-0 right-0 top-full mt-1.5 z-20 bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden divide-y divide-gray-100 max-h-72 overflow-y-auto custom-scrollbar"
-                        >
-                          {LILA_RING_ANIMATIONS.map((opt) => {
-                            const isSelected = (config.ringAnimation || 'golden_spirals') === opt.id;
-                            const IconComp = RING_ICONS[opt.id] || Sparkles;
-                            return (
-                              <button
-                                key={opt.id}
-                                id={`dropdown-option-${opt.id}`}
-                                type="button"
-                                onClick={() => {
-                                  onChangeConfig({ ringAnimation: opt.id });
-                                  setIsDropdownOpen(false);
-                                }}
-                                className={`w-full p-3 flex items-center justify-between text-left transition-colors cursor-pointer ${
-                                  isSelected ? 'bg-gray-100/90 text-black font-semibold' : 'hover:bg-gray-50 text-gray-700'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2.5">
-                                  <div
-                                    className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-                                      isSelected ? 'bg-black text-white' : 'bg-gray-100 text-gray-600'
-                                    }`}
-                                  >
-                                    <IconComp className="w-3 h-3" />
-                                  </div>
-                                  <div>
-                                    <div className="text-xs font-medium flex items-center gap-1.5">
-                                      <span>{opt.name}</span>
-                                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-gray-100 text-gray-600 border border-gray-200 font-normal">
-                                        {opt.tag}
-                                      </span>
-                                    </div>
-                                    <div className="text-[10px] text-gray-400 font-light">{opt.hindiName}</div>
-                                  </div>
-                                </div>
-                                {isSelected && <Check className="w-4 h-4 text-black shrink-0" />}
-                              </button>
-                            );
-                          })}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                {/* Live Real-Time Canvas Preview Card */}
-                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm flex flex-col sm:flex-row items-center gap-4">
-                  <div className="relative w-32 h-32 shrink-0 flex items-center justify-center bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden shadow-inner">
-                    <canvas
-                      ref={previewCanvasRef}
-                      width={128}
-                      height={128}
-                      className="w-32 h-32 pointer-events-none"
-                    />
-                    <div className="absolute inset-x-2 bottom-1.5 text-center">
-                      <span className="text-[9px] text-gray-400 font-mono tracking-wider uppercase">Live Preview</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5 text-center sm:text-left flex-1">
-                    <div className="flex items-center justify-center sm:justify-start gap-2">
-                      <span className="text-xs font-semibold text-black">
-                        {LILA_RING_ANIMATIONS.find((r) => r.id === (config.ringAnimation || 'golden_spirals'))?.name}
-                      </span>
-                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-black text-white font-semibold">
-                        Active Style
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-gray-600 leading-relaxed font-light">
-                      {LILA_RING_ANIMATIONS.find((r) => r.id === (config.ringAnimation || 'golden_spirals'))?.description}
-                    </p>
-                    <p className="text-[11px] text-gray-500 italic font-light">
-                      {LILA_RING_ANIMATIONS.find((r) => r.id === (config.ringAnimation || 'golden_spirals'))?.hindiDescription}
-                    </p>
-                  </div>
-                </div>
-
-                {/* 6 Animation Interactive Grid Selector Cards */}
-                <div className="space-y-2.5">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">
-                    All 6 Available Animations
-                  </span>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {LILA_RING_ANIMATIONS.map((opt) => {
-                      const isSelected = (config.ringAnimation || 'golden_spirals') === opt.id;
-                      const IconComp = RING_ICONS[opt.id] || Sparkles;
-
-                      return (
-                        <div
-                          key={opt.id}
-                          id={`ring-animation-card-${opt.id}`}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => onChangeConfig({ ringAnimation: opt.id })}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              onChangeConfig({ ringAnimation: opt.id });
-                            }
-                          }}
-                          className={`p-3.5 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer select-none ${
-                            isSelected
-                              ? 'bg-white border-black text-black ring-2 ring-black/10 shadow-sm'
-                              : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2 mb-1.5">
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                                  isSelected ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'
-                                }`}
-                              >
-                                <IconComp className="w-3.5 h-3.5" />
-                              </div>
-                              <div>
-                                <div className="font-semibold text-xs flex items-center gap-2">
-                                  <span>{opt.name}</span>
-                                  <span
-                                    className={`text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
-                                      isSelected
-                                        ? 'bg-black text-white border-black'
-                                        : 'bg-gray-100 text-gray-700 border-gray-200'
-                                    }`}
-                                  >
-                                    {opt.tag}
-                                  </span>
-                                </div>
-                                <div className="text-[11px] text-gray-500 font-medium">{opt.hindiName}</div>
-                              </div>
-                            </div>
-                            {isSelected && <Check className="w-4 h-4 text-black shrink-0 mt-1" />}
-                          </div>
-
-                          <p className="text-[11px] text-gray-600 leading-relaxed font-light pl-9.5">
-                            {opt.description}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 4: ENGINE & PROTOCOL SETTINGS */}
-            {activeTab === 'engine' && (
-              <div className="space-y-5">
-                {/* Theme Mode Selector */}
-                <div className="space-y-3">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <Sun className="w-3.5 h-3.5 text-gray-600 dark:text-gray-300" />
-                    <span>Theme & Appearance (थीम)</span>
-                  </label>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      id="theme-btn-light"
-                      type="button"
-                      onClick={() => onChangeConfig({ theme: 'light' })}
-                      className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
-                        (config.theme || 'system') === 'light'
-                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-xs'
-                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        (config.theme || 'system') === 'light' ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400'
-                      }`}>
-                        <Sun className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs font-semibold">Light</span>
-                    </button>
-
-                    <button
-                      id="theme-btn-dark"
-                      type="button"
-                      onClick={() => onChangeConfig({ theme: 'dark' })}
-                      className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
-                        config.theme === 'dark'
-                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-xs'
-                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        config.theme === 'dark' ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400'
-                      }`}>
-                        <Moon className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs font-semibold">Dark</span>
-                    </button>
-
-                    <button
-                      id="theme-btn-system"
-                      type="button"
-                      onClick={() => onChangeConfig({ theme: 'system' })}
-                      className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
-                        config.theme === 'system'
-                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-xs'
-                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        config.theme === 'system' ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400'
-                      }`}>
-                        <Monitor className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs font-semibold">System</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-3 pt-4 border-t border-gray-200/80 dark:border-white/10">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
-                    <span>Connection Protocol</span>
-                  </label>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <button
-                      onClick={() => onChangeConfig({ connectionMode: 'live_websocket' })}
-                      className={`p-3.5 rounded-2xl border text-left transition-all ${
-                        config.connectionMode === 'live_websocket'
-                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-sm'
-                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <div className="font-semibold text-xs text-black dark:text-white mb-0.5">Gemini Live Stream</div>
-                      <div className="text-[11px] text-gray-500 dark:text-gray-400 font-light">
-                        Real-time bidirectional 24kHz PCM16 stream with live interruptions
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => onChangeConfig({ connectionMode: 'turn_based' })}
-                      className={`p-3.5 rounded-2xl border text-left transition-all ${
-                        config.connectionMode === 'turn_based'
-                          ? 'bg-white dark:bg-[#1C1C24] border-black dark:border-white text-black dark:text-white ring-2 ring-black/10 dark:ring-white/20 shadow-sm'
-                          : 'bg-white dark:bg-[#1A1A22] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <div className="font-semibold text-xs text-black dark:text-white mb-0.5">Smart Voice Turn</div>
-                      <div className="text-[11px] text-gray-500 dark:text-gray-400 font-light">
-                        Gemini 3.7 Flash + Grounding + 3.1 Flash TTS Synthesis
-                      </div>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-3 pt-4 border-t border-gray-200/80 dark:border-white/10">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
-                    <span>Interaction Preferences</span>
-                  </label>
-
-                  <div className="space-y-2">
-                    {/* Always Allow Mic */}
-                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#1A1A22] border border-gray-200 dark:border-white/10 shadow-sm">
-                      <div className="space-y-0.5 pr-2">
-                        <span className="font-semibold text-xs text-[#1D1D1F] dark:text-white flex items-center gap-1.5">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                          <span>Always Allow Microphone (हमेशा माइक चालू रखें)</span>
-                        </span>
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-light block">
-                          Maintain persistent microphone pre-authorization for zero-delay speech responses
-                        </span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={config.alwaysAllowMic}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          onChangeConfig({ alwaysAllowMic: checked });
-                          if (checked) {
-                            handleAuthorizeAlwaysMic();
-                          }
-                        }}
-                        className="w-4 h-4 accent-black dark:accent-white rounded cursor-pointer shrink-0"
-                      />
-                    </div>
-
-                    {/* Continuous Hands-Free */}
-                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#1A1A22] border border-gray-200 dark:border-white/10 shadow-sm">
-                      <div className="space-y-0.5">
-                        <span className="font-medium text-xs text-[#1D1D1F] dark:text-white block">
-                          Hands-Free Continuous Conversation
-                        </span>
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-light block">
-                          Automatically resume microphone listening after Lila finishes speaking
-                        </span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={config.continuousMode}
-                        onChange={(e) => onChangeConfig({ continuousMode: e.target.checked })}
-                        className="w-4 h-4 accent-black dark:accent-white rounded cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Subtitles Overlay */}
-                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#1A1A22] border border-gray-200 dark:border-white/10 shadow-sm">
-                      <div className="space-y-0.5">
-                        <span className="font-medium text-xs text-[#1D1D1F] dark:text-white block">
-                          Live Subtitle Captions
-                        </span>
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-light block">
-                          Display dynamic text floating badge during voice streaming
-                        </span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={config.showSubtitles}
-                        onChange={(e) => onChangeConfig({ showSubtitles: e.target.checked })}
-                        className="w-4 h-4 accent-black dark:accent-white rounded cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Sound Effects */}
-                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#1A1A22] border border-gray-200 dark:border-white/10 shadow-sm">
-                      <div className="space-y-0.5">
-                        <span className="font-medium text-xs text-[#1D1D1F] dark:text-white block">UI Sound Cues</span>
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-light block">
-                          Play subtle audio chimes on session connect, tools, and disconnect
-                        </span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={config.soundEffects}
-                        onChange={(e) => onChangeConfig({ soundEffects: e.target.checked })}
-                        className="w-4 h-4 accent-black dark:accent-white rounded cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="p-4 border-t border-gray-100 dark:border-white/10 flex justify-end bg-white dark:bg-[#121217]">
-            <button
-              id="lila-done-settings-btn"
-              onClick={onClose}
-              className="px-6 py-2 rounded-full bg-black dark:bg-white text-white dark:text-black text-xs font-semibold hover:bg-neutral-800 dark:hover:bg-gray-200 shadow-sm transition-all cursor-pointer"
+            {/* Footer */}
+            <div
+              className={`p-4 border-t flex justify-end transition-colors ${
+                isDark ? 'bg-[#14161C] border-[#22252D]' : 'bg-white border-gray-100'
+              }`}
             >
-              Done
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
+              <button
+                id="lila-done-settings-btn"
+                onClick={onClose}
+                className={`px-6 py-2 rounded-full text-xs font-semibold shadow-sm transition-all cursor-pointer ${
+                  isDark
+                    ? 'bg-white text-black hover:bg-gray-200'
+                    : 'bg-black text-white hover:bg-neutral-800'
+                }`}
+              >
+                Done
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      </AnimatePresence>
+    </>
   );
-};
+});
