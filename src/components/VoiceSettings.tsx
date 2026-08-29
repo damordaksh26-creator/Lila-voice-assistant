@@ -147,9 +147,13 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
 
   const isGirlfriendUnlocked = Boolean(config.secretGirlfriendUnlocked || config.persona === 'girlfriend');
 
+  const removedDefaultIds = config.removedDefaultContactIds || [];
+  const activeDefaultContacts = DEFAULT_CONTACTS.filter(
+    (c) => !removedDefaultIds.includes(c.id)
+  );
   const allContacts: ContactEntry[] = [
     ...(config.customContacts || []),
-    ...DEFAULT_CONTACTS,
+    ...activeDefaultContacts,
   ];
 
   useEffect(() => {
@@ -330,7 +334,8 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
           math_expression: mathExpr,
           note_app: config.preferredNotesApp || 'google_keep',
         },
-        config.customContacts || []
+        config.customContacts || [],
+        config.removedDefaultContactIds || []
       );
 
       setTestActionNotice(res.message);
@@ -363,9 +368,26 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
     setShowAddContact(false);
   };
 
-  const handleDeleteCustomContact = (id: string) => {
-    const updated = (config.customContacts || []).filter((c) => c.id !== id);
-    onChangeConfig({ customContacts: updated });
+  const handleDeleteContact = (contact: ContactEntry) => {
+    const isCustom = contact.id.startsWith('custom_') || (config.customContacts || []).some((c) => c.id === contact.id);
+    if (isCustom) {
+      const updated = (config.customContacts || []).filter((c) => c.id !== contact.id);
+      onChangeConfig({ customContacts: updated });
+    } else {
+      // It's a pre-given default contact (e.g. mom, dad, rahul, priya, home, emergency)
+      const currentRemoved = config.removedDefaultContactIds || [];
+      const updatedRemoved = Array.from(new Set([...currentRemoved, contact.id]));
+      onChangeConfig({ removedDefaultContactIds: updatedRemoved });
+    }
+  };
+
+  const handleRemoveAllPresetContacts = () => {
+    const allDefaultIds = DEFAULT_CONTACTS.map((c) => c.id);
+    onChangeConfig({ removedDefaultContactIds: allDefaultIds });
+  };
+
+  const handleRestorePresetContacts = () => {
+    onChangeConfig({ removedDefaultContactIds: [] });
   };
 
   const handleRunCalculatorTest = () => {
@@ -659,32 +681,97 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                   </div>
 
                   {/* STEP 1: Phone Calling & Voice Contacts Book */}
-                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <PhoneCall className="w-3.5 h-3.5 text-rose-500" />
-                        <span>Step 1: Voice Calling & Contacts (कॉल और संपर्क)</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddContact(!showAddContact)}
-                        className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{showAddContact ? 'Cancel' : 'Add Contact'}</span>
-                      </button>
+                  <div
+                    className={`p-4 rounded-2xl border shadow-sm space-y-3.5 transition-colors ${
+                      isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'bg-white border-gray-200'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="space-y-0.5">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                          <PhoneCall className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Step 1: Voice Calling & Contacts ({allContacts.length})</span>
+                        </label>
+                        <p className={`text-[11px] font-light ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+                          Numbers dialed when you say "Call Mom", "Call Papa", or custom contacts.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Remove All Preset Numbers Button */}
+                        {activeDefaultContacts.length > 0 && (
+                          <button
+                            type="button"
+                            id="btn-remove-all-preset-numbers"
+                            onClick={handleRemoveAllPresetContacts}
+                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                              isDark
+                                ? 'bg-rose-950/40 text-rose-300 border-rose-800/50 hover:bg-rose-900/60'
+                                : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                            }`}
+                            title="Remove all pre-given contacts (Mom, Papa, Rahul, Priya, Home, Emergency)"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Remove Pre-set ({activeDefaultContacts.length})</span>
+                          </button>
+                        )}
+
+                        {/* Restore Preset Numbers Button */}
+                        {removedDefaultIds.length > 0 && (
+                          <button
+                            type="button"
+                            id="btn-restore-preset-numbers"
+                            onClick={handleRestorePresetContacts}
+                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                              isDark
+                                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/50 hover:bg-emerald-900/60'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                            }`}
+                            title="Restore default pre-given contacts"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Restore Pre-set</span>
+                          </button>
+                        )}
+
+                        {/* Add Contact Button */}
+                        <button
+                          type="button"
+                          id="btn-add-contact-toggle"
+                          onClick={() => setShowAddContact(!showAddContact)}
+                          className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 cursor-pointer px-2 py-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{showAddContact ? 'Cancel' : 'Add Contact'}</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Add Contact Inline Form */}
                     {showAddContact && (
-                      <form onSubmit={handleAddCustomContact} className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+                      <form
+                        onSubmit={handleAddCustomContact}
+                        className={`p-3.5 rounded-xl border space-y-2.5 ${
+                          isDark
+                            ? 'bg-white/[0.04] border-white/10'
+                            : 'bg-gray-50 border-gray-200'
+                        }`}
+                      >
+                        <div className="text-xs font-semibold text-rose-600 flex items-center gap-1">
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add New Voice Contact</span>
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <input
                             type="text"
                             placeholder="Name (e.g. Doctor, Boss)"
                             value={newContactName}
                             onChange={(e) => setNewContactName(e.target.value)}
-                            className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white"
+                            className={`px-2.5 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-rose-500 ${
+                              isDark
+                                ? 'bg-[#181A20] border-white/10 text-white placeholder-zinc-500'
+                                : 'bg-white border-gray-300 text-gray-900'
+                            }`}
                             required
                           />
                           <input
@@ -692,21 +779,38 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                             placeholder="Hindi Tag (optional)"
                             value={newContactHindi}
                             onChange={(e) => setNewContactHindi(e.target.value)}
-                            className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white"
+                            className={`px-2.5 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-rose-500 ${
+                              isDark
+                                ? 'bg-[#181A20] border-white/10 text-white placeholder-zinc-500'
+                                : 'bg-white border-gray-300 text-gray-900'
+                            }`}
                           />
                           <input
                             type="tel"
                             placeholder="Phone (+91 98...)"
                             value={newContactPhone}
                             onChange={(e) => setNewContactPhone(e.target.value)}
-                            className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white"
+                            className={`px-2.5 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-rose-500 font-mono ${
+                              isDark
+                                ? 'bg-[#181A20] border-white/10 text-white placeholder-zinc-500'
+                                : 'bg-white border-gray-300 text-gray-900'
+                            }`}
                             required
                           />
                         </div>
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowAddContact(false)}
+                            className={`px-3 py-1 text-xs rounded-lg cursor-pointer ${
+                              isDark ? 'text-zinc-400 hover:text-white' : 'text-gray-600 hover:text-black'
+                            }`}
+                          >
+                            Cancel
+                          </button>
                           <button
                             type="submit"
-                            className="px-3 py-1 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 cursor-pointer"
+                            className="px-3.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-xs transition-colors"
                           >
                             Save Contact
                           </button>
@@ -714,51 +818,136 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsProps> = React.memo(({
                       </form>
                     )}
 
-                    {/* Contacts Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {allContacts.map((c) => (
-                        <div
-                          key={c.id}
-                          className="p-2.5 rounded-xl border border-gray-200 hover:border-gray-300 bg-gray-50/50 flex items-center justify-between group"
-                        >
-                          <div className="flex items-center space-x-2.5 min-w-0">
-                            <div className={`w-8 h-8 rounded-full ${c.avatarColor || 'bg-rose-500'} text-white flex items-center justify-center font-bold text-xs shrink-0`}>
-                              {c.name.charAt(0)}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center space-x-1.5">
-                                <span className="text-xs font-semibold text-gray-900 truncate">{c.name}</span>
-                                {c.hindiName && (
-                                  <span className="text-[10px] text-gray-500">({c.hindiName})</span>
-                                )}
-                              </div>
-                              <span className="text-[11px] text-gray-500 font-mono block truncate">{c.phoneNumber}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center space-x-1.5 shrink-0">
+                    {/* Contacts List or Empty State */}
+                    {allContacts.length === 0 ? (
+                      <div
+                        className={`p-6 rounded-xl border border-dashed text-center space-y-2.5 ${
+                          isDark
+                            ? 'border-white/10 bg-white/[0.01]'
+                            : 'border-gray-200 bg-gray-50/50'
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-full mx-auto flex items-center justify-center bg-gray-200/60 dark:bg-white/10 text-gray-400">
+                          <Users className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className={`text-xs font-medium ${isDark ? 'text-zinc-200' : 'text-gray-800'}`}>
+                            All pre-given mobile numbers have been removed
+                          </p>
+                          <p className={`text-[11px] font-light max-w-sm mx-auto mt-0.5 ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+                            You can add your own custom mobile numbers or restore the pre-set defaults anytime.
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowAddContact(true)}
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg cursor-pointer flex items-center gap-1.5 shadow-xs"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Add Contact</span>
+                          </button>
+                          {removedDefaultIds.length > 0 && (
                             <button
                               type="button"
-                              onClick={() => handleExecuteQuickAppTest('call', 'phone', undefined, undefined, c.phoneNumber, c.name)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold flex items-center space-x-1 cursor-pointer transition-colors shadow-xs"
-                              title={`Call ${c.name}`}
+                              onClick={handleRestorePresetContacts}
+                              className={`px-3 py-1.5 border text-xs font-semibold rounded-lg cursor-pointer flex items-center gap-1.5 transition-colors ${
+                                isDark
+                                  ? 'border-white/20 text-zinc-200 hover:bg-white/10'
+                                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                              }`}
                             >
-                              <PhoneCall className="w-3 h-3" />
-                              <span>Call</span>
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Restore Pre-set Numbers</span>
                             </button>
-                            {c.id.startsWith('custom_') && (
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteCustomContact(c.id)}
-                                className="p-1 text-gray-400 hover:text-red-600 rounded cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
+                          )}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {allContacts.map((c) => {
+                          const isPreset = !c.id.startsWith('custom_') && DEFAULT_CONTACTS.some((def) => def.id === c.id);
+                          return (
+                            <div
+                              key={c.id}
+                              className={`p-2.5 rounded-xl border flex items-center justify-between transition-all group ${
+                                isDark
+                                  ? 'border-white/[0.08] bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
+                                  : 'border-gray-200 hover:border-gray-300 bg-gray-50/50 hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-2.5 min-w-0">
+                                <div
+                                  className={`w-8 h-8 rounded-full ${
+                                    c.avatarColor || (isPreset ? 'bg-rose-500' : 'bg-indigo-500')
+                                  } text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs`}
+                                >
+                                  {c.name.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center space-x-1.5 flex-wrap">
+                                    <span className={`text-xs font-semibold truncate ${isDark ? 'text-zinc-100' : 'text-gray-900'}`}>
+                                      {c.name}
+                                    </span>
+                                    {c.hindiName && (
+                                      <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+                                        ({c.hindiName})
+                                      </span>
+                                    )}
+                                    <span
+                                      className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-medium ${
+                                        isPreset
+                                          ? isDark
+                                            ? 'bg-rose-950/60 text-rose-300 border border-rose-800/40'
+                                            : 'bg-rose-100/70 text-rose-700'
+                                          : isDark
+                                          ? 'bg-indigo-950/60 text-indigo-300 border border-indigo-800/40'
+                                          : 'bg-indigo-100/70 text-indigo-700'
+                                      }`}
+                                    >
+                                      {isPreset ? 'Pre-set' : 'Custom'}
+                                    </span>
+                                  </div>
+                                  <span
+                                    className={`text-[11px] font-mono block truncate ${
+                                      isDark ? 'text-zinc-400' : 'text-gray-500'
+                                    }`}
+                                  >
+                                    {c.phoneNumber}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center space-x-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleExecuteQuickAppTest('call', 'phone', undefined, undefined, c.phoneNumber, c.name)}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold flex items-center space-x-1 cursor-pointer transition-colors shadow-xs active:scale-95"
+                                  title={`Call ${c.name} (${c.phoneNumber})`}
+                                >
+                                  <PhoneCall className="w-3 h-3" />
+                                  <span>Call</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  id={`btn-remove-contact-${c.id}`}
+                                  onClick={() => handleDeleteContact(c)}
+                                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                    isDark
+                                      ? 'text-zinc-400 hover:text-rose-400 hover:bg-rose-950/40'
+                                      : 'text-gray-400 hover:text-rose-600 hover:bg-rose-50'
+                                  }`}
+                                  title={isPreset ? `Remove pre-given number for ${c.name}` : `Delete ${c.name}`}
+                                  aria-label={`Remove ${c.name}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* STEP 3: Built-in App Automation (Calculator & Notepad) */}

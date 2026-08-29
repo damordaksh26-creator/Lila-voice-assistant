@@ -87,12 +87,27 @@ export const DEFAULT_CONTACTS: ContactEntry[] = [
   },
 ];
 
+// Helper to get all active contacts (combines custom and active default contacts)
+export function getAllActiveContacts(
+  customList: ContactEntry[] = [],
+  removedDefaultIds: string[] = []
+): ContactEntry[] {
+  const activeDefaults = DEFAULT_CONTACTS.filter(
+    (c) => !removedDefaultIds.includes(c.id)
+  );
+  return [...customList, ...activeDefaults];
+}
+
 // Helper to resolve contact from name or number
-export function resolveContact(query: string, customList: ContactEntry[] = []): ContactEntry | null {
+export function resolveContact(
+  query: string,
+  customList: ContactEntry[] = [],
+  removedDefaultIds: string[] = []
+): ContactEntry | null {
   const clean = query.toLowerCase().trim();
   if (!clean) return null;
 
-  const allContacts = [...customList, ...DEFAULT_CONTACTS];
+  const allContacts = getAllActiveContacts(customList, removedDefaultIds);
 
   // 1. Direct phone number check
   const digitsOnly = clean.replace(/[^0-9+]/g, '');
@@ -305,7 +320,8 @@ export function getDevicePermissions(status: NativeBridgeStatus): DevicePermissi
  */
 export async function executeAppControlCommand(
   command: AppControlCommand,
-  customContacts: ContactEntry[] = []
+  customContacts: ContactEntry[] = [],
+  removedDefaultContactIds: string[] = []
 ): Promise<{
   success: boolean;
   message: string;
@@ -354,7 +370,7 @@ export async function executeAppControlCommand(
 
       // 1A. Phone Calling (Step 1)
       if (action === 'call') {
-        const targetNumber = phone_number || (contact_name ? resolveContact(contact_name, customContacts)?.phoneNumber : query);
+        const targetNumber = phone_number || (contact_name ? resolveContact(contact_name, customContacts, removedDefaultContactIds)?.phoneNumber : query);
         if (targetNumber && typeof nativeBridge.makeCall === 'function') {
           const res = nativeBridge.makeCall(targetNumber, contact_name || query || '');
           return {
@@ -449,7 +465,7 @@ export async function executeAppControlCommand(
 
   switch (action) {
     case 'call': {
-      const resolved = resolveContact(contact_name || phone_number || query || '', customContacts);
+      const resolved = resolveContact(contact_name || phone_number || query || '', customContacts, removedDefaultContactIds);
       const dialNum = resolved ? resolved.phoneNumber.replace(/[\s-]/g, '') : (phone_number || query || '');
       fallbackUrl = `tel:${dialNum}`;
       fallbackMessage = `Dialing ${resolved ? resolved.name : dialNum} (${dialNum})...`;

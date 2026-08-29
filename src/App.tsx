@@ -550,7 +550,8 @@ export default function App() {
                   phone_number: tool.args?.phone_number || tool.result?.data?.phone_number,
                   contact_name: tool.args?.contact_name || tool.result?.data?.contact_name,
                 },
-                settingsRef.current.customContacts || []
+                settingsRef.current.customContacts || [],
+                settingsRef.current.removedDefaultContactIds || []
               );
             } catch (appErr) {
               console.warn('Call execution notice:', appErr);
@@ -598,7 +599,8 @@ export default function App() {
                   math_expression: tool.args?.math_expression || tool.result?.data?.math_expression,
                   note_app: (tool.args?.note_app || tool.result?.data?.note_app || settingsRef.current.preferredNotesApp || 'google_keep') as any,
                 },
-                settingsRef.current.customContacts || []
+                settingsRef.current.customContacts || [],
+                settingsRef.current.removedDefaultContactIds || []
               );
             } catch (appErr) {
               console.warn('App control execution notice:', appErr);
@@ -807,7 +809,8 @@ export default function App() {
                     phone_number: data.args?.phone_number || data.result?.data?.phone_number,
                     contact_name: data.args?.contact_name || data.result?.data?.contact_name,
                   },
-                  settingsRef.current.customContacts || []
+                  settingsRef.current.customContacts || [],
+                  settingsRef.current.removedDefaultContactIds || []
                 );
               } catch (appErr) {
                 console.warn('Call WebSocket execution notice:', appErr);
@@ -855,7 +858,8 @@ export default function App() {
                     math_expression: data.args?.math_expression || data.result?.data?.math_expression,
                     note_app: (data.args?.note_app || data.result?.data?.note_app || settingsRef.current.preferredNotesApp || 'google_keep') as any,
                   },
-                  settingsRef.current.customContacts || []
+                  settingsRef.current.customContacts || [],
+                  settingsRef.current.removedDefaultContactIds || []
                 );
               } catch (appErr) {
                 console.warn('App control WebSocket execution notice:', appErr);

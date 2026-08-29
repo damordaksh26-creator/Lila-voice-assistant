@@ -167,6 +167,7 @@ export interface VoiceSettingsConfig {
   preferredNotesApp?: 'google_keep' | 'samsung_notes' | 'notepad';
   hasCompletedOnboarding?: boolean;
   customContacts?: ContactEntry[];
+  removedDefaultContactIds?: string[];
   preferDirectDial?: boolean;
   nativeBridgeSimulation?: boolean;
 }
